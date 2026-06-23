@@ -1,6 +1,5 @@
 <script>
-	import { goto } from "$app/navigation";
-	import { fetchStats, fetchStations, decodeStatsRow } from "$lib/data/data.js";
+	import { fetchStats, fetchStations, fetchStationDetail, decodeStatsRow } from "$lib/data/data.js";
 	import { MESES } from "$lib/utils/format.js";
 	import TopBar from "$lib/components/ui/TopBar.svelte";
 	import RankingTables from "$lib/components/datos/RankingTables.svelte";
@@ -15,6 +14,11 @@
 	let anio = $state(null);
 	let hoverIdx = $state(-1);
 	let svgWidth = $state(0);
+	// Estación seleccionada dentro de una provincia: en vez de navegar a su
+	// ficha, filtramos la gráfica a sus propios récords (acumulado por estación).
+	let estacionSel = $state("");
+	let stationDetail = $state(null);
+	const stationCache = new Map();
 
 	$effect(() => {
 		fetchStats()
@@ -34,6 +38,34 @@
 				.then((s) => (stations = s))
 				.catch((e) => console.warn("No se pudo cargar stations.json", e));
 		}
+	});
+
+	// Al cambiar de provincia (o volver a "total"), deselecciona la estación.
+	$effect(() => {
+		grupo;
+		estacionSel = "";
+	});
+
+	// Lazy-load del detalle de la estación elegida (cacheado en memoria). El
+	// detalle ya trae todos los eventos de récord, así que el acumulado por
+	// estación se calcula en cliente sin tocar el pipeline ni la base de datos.
+	$effect(() => {
+		const ind = estacionSel;
+		if (!ind) {
+			stationDetail = null;
+			return;
+		}
+		if (stationCache.has(ind)) {
+			stationDetail = stationCache.get(ind);
+			return;
+		}
+		stationDetail = null;
+		fetchStationDetail(ind)
+			.then((d) => {
+				stationCache.set(ind, d);
+				if (estacionSel === ind) stationDetail = d;
+			})
+			.catch((e) => console.warn("No se pudo cargar la estación", e));
 	});
 
 	// --- derivaciones ---------------------------------------------------
@@ -64,6 +96,56 @@
 			});
 		}
 		return out;
+	}
+
+	/** Igual que rowsFor pero para una sola estación: cuenta sus eventos de
+	 *  récord (absoluto + mensual) por periodo. Misma definición que el agregado
+	 *  de grupo (absolutoMax+mensualMax · absolutoMin+mensualMin). El % de
+	 *  estaciones no aplica con n=1, así que se omite (estacionesConDatos = 0). */
+	function rowsForStation(detail) {
+		const esMax = (t) => t === "absoluto-max" || t === "mensual-max";
+		const esMin = (t) => t === "absoluto-min" || t === "mensual-min";
+		const eventos = detail.eventos ?? [];
+
+		if (vista === "anual") {
+			const yrs = eventos.map((e) => +e.fecha.slice(0, 4));
+			if (yrs.length === 0) return [];
+			const y0 = Math.min(...yrs);
+			const y1 = stats?.anioMax ?? Math.max(...yrs);
+			const cuenta = new Map();
+			for (let y = y0; y <= y1; y++) cuenta.set(y, { max: 0, min: 0 });
+			for (const e of eventos) {
+				const c = cuenta.get(+e.fecha.slice(0, 4));
+				if (!c) continue;
+				if (esMax(e.tipo)) c.max++;
+				else if (esMin(e.tipo)) c.min++;
+			}
+			return [...cuenta].map(([y, c]) => ({
+				label: String(y),
+				labelLong: `Año ${y}`,
+				recordsMax: c.max,
+				recordsMin: c.min,
+				totalRecords: c.max + c.min,
+				estacionesConDatos: 0,
+			}));
+		}
+
+		// Mes a mes del año seleccionado.
+		const meses = Array.from({ length: 12 }, () => ({ max: 0, min: 0 }));
+		for (const e of eventos) {
+			if (+e.fecha.slice(0, 4) !== anio) continue;
+			const m = +e.fecha.slice(5, 7) - 1;
+			if (esMax(e.tipo)) meses[m].max++;
+			else if (esMin(e.tipo)) meses[m].min++;
+		}
+		return meses.map((c, i) => ({
+			label: MESES[i + 1].slice(0, 3),
+			labelLong: `${MESES[i + 1]} ${anio}`,
+			recordsMax: c.max,
+			recordsMin: c.min,
+			totalRecords: c.max + c.min,
+			estacionesConDatos: 0,
+		}));
 	}
 
 	/** Por cada barra: récords de máxima/mínima descompuestos en absoluto+mensual,
@@ -149,12 +231,42 @@
 	}
 
 	// --- derivaciones reactivas -----------------------------------------
-	const data = $derived(stats ? decorate(rowsFor(stats)) : []);
+	// Estamos en "modo estación" cuando hay una elegida y su detalle ya cargó.
+	const modoEstacion = $derived(
+		!!(estacionSel && stationDetail && stationDetail.indicativo === estacionSel),
+	);
+	// Mientras una estación está seleccionada pero su detalle aún no llegó, no
+	// mostramos el agregado de provincia (evita un parpadeo de datos ajenos).
+	const data = $derived(
+		estacionSel
+			? modoEstacion
+				? rowsForStation(stationDetail)
+				: []
+			: stats
+				? decorate(rowsFor(stats))
+				: [],
+	);
 	const geom = $derived(chartGeom(data, svgWidth));
 	const tickRec = $derived(geom ? niceTicks(geom.maxRec) : []);
 	const grupoNombre = $derived(nombreGrupo(stats));
 	const grupoActual = $derived(grupoMeta(stats));
 	const groupStations = $derived(stationsOfGroup(stations, grupoActual));
+	// Nombre del ámbito mostrado (provincia/total o estación) y años disponibles
+	// para el selector "mes a mes" (los de la estación cuando hay una elegida).
+	const ambitoNombre = $derived(modoEstacion ? stationDetail.nombre : grupoNombre);
+	const stationYears = $derived(
+		modoEstacion
+			? [...new Set(stationDetail.eventos.map((e) => +e.fecha.slice(0, 4)))].sort((a, b) => a - b)
+			: null,
+	);
+	const aniosOpts = $derived(stationYears ?? stats?.anios ?? []);
+	// Si la estación no tiene récords en el año elegido, salta a su año más
+	// reciente con datos para que la vista "mes a mes" no quede vacía.
+	$effect(() => {
+		if (modoEstacion && stationYears.length && !stationYears.includes(anio)) {
+			anio = stationYears[stationYears.length - 1];
+		}
+	});
 	// Resúmenes
 	const totalMax = $derived(data.reduce((a, b) => a + b.recordsMax, 0));
 	const totalMin = $derived(data.reduce((a, b) => a + b.recordsMin, 0));
@@ -219,25 +331,21 @@
 					<label class="control">
 						<span class="ctl-label">Año</span>
 						<select bind:value={anio}>
-							{#each stats.anios.slice().reverse() as y (y)}
+							{#each aniosOpts.slice().reverse() as y (y)}
 								<option value={y}>{y}</option>
 							{/each}
 						</select>
 					</label>
 				{/if}
 
-				<!-- Selector de estación SOLO si hay provincia elegida.
-				     Al elegir una, navegamos al detalle. -->
+				<!-- Selector de estación SOLO si hay provincia elegida. Al elegir
+				     una, la gráfica pasa a mostrar el acumulado de ESA estación;
+				     dejándolo en blanco se vuelve al agregado de la provincia. -->
 				{#if grupo !== "total" && groupStations.length > 0}
 					<label class="control">
-						<span class="ctl-label">Ver estación</span>
-						<select
-							onchange={(e) => {
-								const ind = e.currentTarget.value;
-								if (ind) goto(`/estacion/${ind}`);
-							}}
-						>
-							<option value="">— {groupStations.length} estaciones —</option>
+						<span class="ctl-label">Estación</span>
+						<select bind:value={estacionSel}>
+							<option value="">Toda la provincia · {groupStations.length} est.</option>
 							{#each groupStations as st (st.indicativo)}
 								<option value={st.indicativo}>{st.nombre}</option>
 							{/each}
@@ -247,18 +355,22 @@
 			</div>
 
 			<!-- Resumen -->
-			{#if data.length > 0}
+			{#if estacionSel && !modoEstacion}
+				<p class="summary muted">Cargando récords de la estación…</p>
+			{:else if data.length > 0}
 				<p class="summary">
-					<strong>{grupoNombre}</strong>
+					<strong>{ambitoNombre}</strong>
 					·
-					{vista === "anual"
-						? `${stats.anios[0]}–${stats.anios[stats.anios.length - 1]}`
-						: `año ${anio}`}
+					{vista === "anual" ? `${data[0].label}–${data[data.length - 1].label}` : `año ${anio}`}
 					→
 					<strong>{totalMax.toLocaleString("es-ES")}</strong>
 					récords de máxima ·
 					<strong>{totalMin.toLocaleString("es-ES")}</strong>
 					récords de mínima
+					{#if modoEstacion}
+						<span class="tip-sep">·</span>
+						<a href="/estacion/{estacionSel}">Ver ficha completa →</a>
+					{/if}
 				</p>
 			{/if}
 
@@ -416,8 +528,14 @@
 
 			<p class="legend small muted">
 				Máxima y mínima comparten escala (máxima hacia arriba, mínima hacia abajo) para comparar al
-				vuelo. Pasa el ratón por un periodo para ver el desglose, incluido el porcentaje de
-				estaciones que batieron récord.
+				vuelo.
+				{#if modoEstacion}
+					Cada barra es el número de récords (absolutos y mensuales) que batió esta estación en ese
+					periodo.
+				{:else}
+					Pasa el ratón por un periodo para ver el desglose, incluido el porcentaje de estaciones
+					que batieron récord.
+				{/if}
 			</p>
 
 			<RankingTables />

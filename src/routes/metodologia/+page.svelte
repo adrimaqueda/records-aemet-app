@@ -175,12 +175,20 @@
 			<p>
 				Los datos brutos son propiedad de AEMET y están sujetos a su
 				<a href="https://www.aemet.es/es/nota_legal" target="_blank" rel="noreferrer">nota legal</a>
-				. El código de procesamiento y visualización es abierto y está disponible en
-				<a href="https://github.com/adrimaqueda/records-aemet-app" target="_blank" rel="noreferrer">
-					GitHub
+				. El código de
+				<a
+					href="https://github.com/adrimaqueda/records-aemet-pipeline"
+					target="_blank"
+					rel="noreferrer"
+				>
+					procesamiento
 				</a>
-				. Los datos ya procesados —los archivos JSON que consume esta web— se publican como un dataset
-				abierto en
+				y
+				<a href="https://github.com/adrimaqueda/records-aemet-app" target="_blank" rel="noreferrer">
+					visualización
+				</a>
+				es abierto y está disponible en . Los datos ya procesados —los archivos JSON que consume esta
+				web— se publican como un dataset abierto en
 				<a
 					href="https://huggingface.co/datasets/adrimaqueda/records-aemet"
 					target="_blank"
