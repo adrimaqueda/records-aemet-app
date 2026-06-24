@@ -141,7 +141,6 @@
 			.sort(
 				(a, b) =>
 					new Date(b.ult.fecha).getTime() - new Date(a.ult.fecha).getTime() ||
-					b.n - a.n ||
 					b.ult.valor - a.ult.valor ||
 					a.s.nombre.localeCompare(b.s.nombre, "es"),
 			),

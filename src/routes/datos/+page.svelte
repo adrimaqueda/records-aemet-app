@@ -3,6 +3,8 @@
 	import { MESES } from "$lib/utils/format.js";
 	import TopBar from "$lib/components/ui/TopBar.svelte";
 	import RankingTables from "$lib/components/datos/RankingTables.svelte";
+	import { scaleBand, scaleLinear } from "d3-scale";
+	import { max, min, rollup, sum, ticks } from "d3-array";
 
 	// --- estado ---------------------------------------------------------
 	let stats = $state(null);
@@ -110,24 +112,31 @@
 		if (vista === "anual") {
 			const yrs = eventos.map((e) => +e.fecha.slice(0, 4));
 			if (yrs.length === 0) return [];
-			const y0 = Math.min(...yrs);
-			const y1 = stats?.anioMax ?? Math.max(...yrs);
-			const cuenta = new Map();
-			for (let y = y0; y <= y1; y++) cuenta.set(y, { max: 0, min: 0 });
-			for (const e of eventos) {
-				const c = cuenta.get(+e.fecha.slice(0, 4));
-				if (!c) continue;
-				if (esMax(e.tipo)) c.max++;
-				else if (esMin(e.tipo)) c.min++;
+			const y0 = min(yrs);
+			const y1 = stats?.anioMax ?? max(yrs);
+			// Récords de máxima/mínima agrupados por año.
+			const porAnio = rollup(
+				eventos,
+				(v) => ({
+					max: v.filter((e) => esMax(e.tipo)).length,
+					min: v.filter((e) => esMin(e.tipo)).length,
+				}),
+				(e) => +e.fecha.slice(0, 4),
+			);
+			// Rellena TODOS los años del rango (incluidos los de cero récords).
+			const out = [];
+			for (let y = y0; y <= y1; y++) {
+				const c = porAnio.get(y) ?? { max: 0, min: 0 };
+				out.push({
+					label: String(y),
+					labelLong: `Año ${y}`,
+					recordsMax: c.max,
+					recordsMin: c.min,
+					totalRecords: c.max + c.min,
+					estacionesConDatos: 0,
+				});
 			}
-			return [...cuenta].map(([y, c]) => ({
-				label: String(y),
-				labelLong: `Año ${y}`,
-				recordsMax: c.max,
-				recordsMin: c.min,
-				totalRecords: c.max + c.min,
-				estacionesConDatos: 0,
-			}));
+			return out;
 		}
 
 		// Mes a mes del año seleccionado.
@@ -197,37 +206,30 @@
 		if (!width || data.length === 0) return null;
 		const w = Math.max(0, width - MARGIN.left - MARGIN.right);
 		const h = HEIGHT - MARGIN.top - MARGIN.bottom;
-		const n = data.length;
-		const gap = n > 30 ? 0 : 2;
-		const barW = Math.max(1, w / n - gap);
 		const halfH = h / 2;
 		const cy = MARGIN.top + halfH; // línea cero (centro)
 		// Escala compartida entre máxima y mínima → comparación justa.
-		const maxRec = Math.max(1, ...data.map((d) => Math.max(d.recordsMax, d.recordsMin)));
-		return { w, h, n, barW, gap, maxRec, halfH, cy };
+		const maxRec = Math.max(1, max(data, (d) => Math.max(d.recordsMax, d.recordsMin)));
+
+		// X: escala de banda (una banda por periodo); d3 reparte ancho y separación.
+		const x = scaleBand()
+			.domain(data.map((d) => d.label))
+			.range([MARGIN.left, MARGIN.left + w])
+			.paddingInner(data.length > 30 ? 0.08 : 0.18);
+		// Y (magnitud): 0 en el centro, maxRec en cada extremo. La misma escala
+		// sirve para máxima (hacia arriba) y mínima (hacia abajo).
+		const yMag = scaleLinear().domain([0, maxRec]).range([0, halfH]);
+
+		return { w, h, maxRec, halfH, cy, x, yMag, barW: x.bandwidth() };
 	}
 
-	function xFor(g, i) {
-		return MARGIN.left + (i + 0.5) * (g.w / g.n);
-	}
 	/** Y para un valor de máxima (por encima del centro). */
 	function yUp(g, v) {
-		return g.cy - (v / g.maxRec) * g.halfH;
+		return g.cy - g.yMag(v);
 	}
 	/** Y para un valor de mínima (por debajo del centro). */
 	function yDown(g, v) {
-		return g.cy + (v / g.maxRec) * g.halfH;
-	}
-
-	function niceTicks(max) {
-		if (max <= 0) return [0];
-		const exp = Math.floor(Math.log10(max));
-		const base = Math.pow(10, exp);
-		const m = max / base;
-		const step = m > 5 ? base * 2 : m > 2 ? base : base / 2;
-		const out = [];
-		for (let v = 0; v <= max; v += step) out.push(Math.round(v));
-		return out;
+		return g.cy + g.yMag(v);
 	}
 
 	// --- derivaciones reactivas -----------------------------------------
@@ -247,7 +249,9 @@
 				: [],
 	);
 	const geom = $derived(chartGeom(data, svgWidth));
-	const tickRec = $derived(geom ? niceTicks(geom.maxRec) : []);
+	// Marcas del eje en valores redondos dentro de [0, maxRec]. Filtramos a
+	// enteros porque son recuentos de récords (sin decimales).
+	const tickRec = $derived(geom ? ticks(0, geom.maxRec, 4).filter(Number.isInteger) : []);
 	const grupoNombre = $derived(nombreGrupo(stats));
 	const grupoActual = $derived(grupoMeta(stats));
 	const groupStations = $derived(stationsOfGroup(stations, grupoActual));
@@ -268,8 +272,8 @@
 		}
 	});
 	// Resúmenes
-	const totalMax = $derived(data.reduce((a, b) => a + b.recordsMax, 0));
-	const totalMin = $derived(data.reduce((a, b) => a + b.recordsMin, 0));
+	const totalMax = $derived(sum(data, (d) => d.recordsMax));
+	const totalMin = $derived(sum(data, (d) => d.recordsMin));
 
 	// Colores (consistentes con el mapa y los tokens --max / --min)
 	const COLOR_MAX = "hsl(8 82% 50%)";
@@ -481,7 +485,7 @@
 						{/each}
 						<!-- Barras divergentes + zona de hover por periodo. -->
 						{#each data as d, i (d.label)}
-							{@const x = xFor(geom, i) - geom.barW / 2}
+							{@const x = geom.x(d.label)}
 							{@const yTopMax = yUp(geom, d.recordsMax)}
 							{@const yBotMin = yDown(geom, d.recordsMin)}
 							<g
@@ -513,7 +517,7 @@
 							{@const step = everyN(data.length)}
 							{#if vista === "mensual" || i % step === 0 || i === data.length - 1}
 								<text
-									x={xFor(geom, i)}
+									x={geom.x(d.label) + geom.barW / 2}
 									y={MARGIN.top + geom.h + 16}
 									text-anchor="middle"
 									class="tick"
