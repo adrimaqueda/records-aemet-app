@@ -394,6 +394,7 @@ silenciosamente para no romper la página.
 		display: flex;
 		flex-direction: column;
 		height: fit-content;
+		min-width: 0;
 	}
 	.card-head {
 		display: flex;
