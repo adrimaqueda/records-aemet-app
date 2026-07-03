@@ -187,8 +187,8 @@
 				<a href="https://github.com/adrimaqueda/records-aemet-app" target="_blank" rel="noreferrer">
 					visualización
 				</a>
-				es abierto y está disponible en . Los datos ya procesados —los archivos JSON que consume esta
-				web— se publican como un dataset abierto en
+				es abierto y está disponible en GitHub. Los datos ya procesados —los archivos JSON que consume
+				esta web— se publican como un dataset abierto en
 				<a
 					href="https://huggingface.co/datasets/adrimaqueda/records-aemet"
 					target="_blank"
@@ -214,7 +214,7 @@
 				>
 					issue en GitHub
 				</a>
-				o escribirme por redes .
+				o escribirme por redes.
 			</p>
 		</section>
 	</main>

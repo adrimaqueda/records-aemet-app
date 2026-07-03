@@ -5,7 +5,7 @@ más caluroso y la noche más cálida (récords absolutos vigentes), con el últ
 récord de cada familia como pie. Depende de los tokens de diseño globales.
 -->
 <script>
-	import { fmtDate, fmtTemp, tipoLabel } from "$lib/utils/format.js";
+	import { fmtDate, fmtNum, fmtTemp, tipoLabel } from "$lib/utils/format.js";
 	import { ageLongLabel, daysSince } from "$lib/utils/age.js";
 	import { colorForDays } from "$lib/utils/colors.js";
 	import { latestInFamily } from "$lib/data/records.js";
@@ -34,9 +34,7 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 		].map((c) => ({
 			...c,
 			accent: c.fam === "max" ? "var(--max)" : "var(--min)",
-			ultimoColor: c.ultimo
-				? colorForDays(c.fam === "max", daysSince(c.ultimo.fecha))
-				: null,
+			ultimoColor: c.ultimo ? colorForDays(c.fam === "max", daysSince(c.ultimo.fecha)) : null,
 		})),
 	);
 
@@ -79,14 +77,7 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 							<circle cx="98" cy="27" r="16" fill="#000" />
 						</mask>
 					</defs>
-					<rect
-						class="moon"
-						x="80"
-						y="10"
-						width="50"
-						height="50"
-						mask="url(#crescent)"
-					/>
+					<rect class="moon" x="80" y="10" width="50" height="50" mask="url(#crescent)" />
 					<g class="stars">
 						<circle cx="58" cy="30" r="1.7" />
 						<circle cx="40" cy="60" r="1.2" />
@@ -106,7 +97,7 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 
 			{#if c.record}
 				<p class="big">
-					<span class="num">{c.record.valor.toFixed(1)}</span>
+					<span class="num">{fmtNum(c.record.valor)}</span>
 					<span class="unit">°C</span>
 				</p>
 				<p class="when">
@@ -127,9 +118,7 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 						<span class="ultimo-detail">
 							{tipoLabel(c.ultimo.tipo, c.ultimo.mes)} ·
 							<b>{fmtTemp(c.ultimo.valor)}</b>
-							· {fmtDate(
-								c.ultimo.fecha,
-							)}{#if c.ultimo.provisional}<ProvisionalTag />{/if}
+							· {fmtDate(c.ultimo.fecha)}{#if c.ultimo.provisional}<ProvisionalTag />{/if}
 						</span>
 					</span>
 				</footer>

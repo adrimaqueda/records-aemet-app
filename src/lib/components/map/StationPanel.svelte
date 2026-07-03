@@ -1,6 +1,6 @@
 <script>
 	import { fetchStationDetail } from "$lib/data/data.js";
-	import { fmtDate, fmtTemp, tipoLabel } from "$lib/utils/format.js";
+	import { fmtDate, fmtNum, fmtTemp, tipoLabel } from "$lib/utils/format.js";
 	import { ageLongLabel, daysSince } from "$lib/utils/age.js";
 	import { latestInFamily } from "$lib/data/records.js";
 	import StationHero from "$lib/components/station/StationHero.svelte";
@@ -49,7 +49,7 @@
 
 					{#if ultimo}
 						<p class="big">
-							<span class="num">{ultimo.valor.toFixed(1)}</span>
+							<span class="num">{fmtNum(ultimo.valor)}</span>
 							<span class="unit">°C</span>
 						</p>
 						<p class="what">
@@ -93,8 +93,7 @@
 		max-height: 80vh;
 		box-sizing: border-box;
 		border-radius: var(--radius);
-		/* Borde superior de acento con el color de recencia del marcador. */
-		border: 1px solid var(--line);
+		/* Borde de acento con el color de recencia del marcador. */
 		border: 3px solid var(--edge, var(--ink));
 		background: color-mix(in srgb, var(--surface) 75%, transparent);
 		backdrop-filter: saturate(0.4) blur(6px);

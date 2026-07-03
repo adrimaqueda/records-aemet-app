@@ -8,7 +8,7 @@ real de la lista. Con un único récord se muestra entero, sin recorte ni botón
 Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 -->
 <script>
-	import { fmtDate, fmtTemp } from "$lib/utils/format.js";
+	import { fmtDate, fmtNum, fmtTemp } from "$lib/utils/format.js";
 	import { ageDurationLabel, daysSince } from "$lib/utils/age.js";
 	import { colorForDays } from "$lib/utils/colors.js";
 	import { extent } from "d3-array";
@@ -56,9 +56,8 @@ Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 					</div>
 					<div class="li-meta muted small">
 						{#if p.valorAnterior != null}
-							{p.valor > p.valorAnterior ? "+" : "−"}{Math.abs(
-								p.valor - p.valorAnterior,
-							).toFixed(1)}°C sobre {fmtTemp(p.valorAnterior)} ·
+							{p.valor > p.valorAnterior ? "+" : "−"}{fmtNum(Math.abs(p.valor - p.valorAnterior))}°C
+							sobre {fmtTemp(p.valorAnterior)} ·
 							{ageDurationLabel(p.diasDesdeAnterior)} después
 						{:else if p.esPrimero}
 							Primer registro

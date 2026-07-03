@@ -73,7 +73,7 @@
 			: { ...m, esAbsoluto: false };
 	}
 
-	/** Total de récords batidos en los últimos 30 días para la familia. */
+	/** Total de récords batidos en los últimos 15 días para la familia. */
 	function countRecientes(s, fam) {
 		const { absoluto, mensual } = FAMILIA_TIPOS[fam];
 		const r = s.recientes15d ?? {};
@@ -129,7 +129,7 @@
 		old: colorForDays(esMax, 3000),
 	});
 
-	/** Lista de estaciones con al menos un récord en el último mes para la familia. */
+	/** Lista de estaciones con al menos un récord en los últimos 15 días para la familia. */
 	const recientes = $derived(
 		stations
 			.map((s) => {

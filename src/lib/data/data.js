@@ -47,11 +47,6 @@ export function decodeStatsRow(row, rowFields) {
 // Cada "familia" agrupa el récord absoluto y el mensual; el indicador
 // visual diferencia cuál fue el último realmente batido.
 
-export const FAMILIA_LABEL = {
-	max: "Máxima · día más caluroso",
-	min: "Mínima · noche más cálida",
-};
-
 export const FAMILIA_SHORT = {
 	max: "Máxima",
 	min: "Mínima",
@@ -59,7 +54,7 @@ export const FAMILIA_SHORT = {
 
 export const FAMILIAS = ["max", "min"];
 
-/** Para una familia, devuelve los keys de tipo del ultimoPorTipo / recientes30d. */
+/** Para una familia, devuelve los keys de tipo del ultimoPorTipo / recientes15d. */
 export const FAMILIA_TIPOS = {
 	max: { absoluto: "absolutoMax", mensual: "mensualMax" },
 	min: { absoluto: "absolutoMin", mensual: "mensualMin" },

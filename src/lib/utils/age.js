@@ -10,17 +10,9 @@ export function daysSince(fecha, ref = new Date()) {
 	return Math.max(0, days);
 }
 
-/** Etiqueta compacta tipo "3d" / "5m" / "12a" para mostrar junto al marcador. */
-export function ageLabel(days) {
-	if (days == null) return '';
-	if (days < 60) return `${days}d`;
-	if (days < 730) return `${Math.round(days / 30)}m`;
-	return `${Math.round(days / 365)}a`;
-}
-
 /** Solo el número de días (para meter dentro del punto en el mapa). */
 export function dayNumber(days) {
-	if (days == null || days > 99) return '';
+	if (days == null || days > 99) return "";
 	return String(days);
 }
 
@@ -30,15 +22,15 @@ export function dayNumber(days) {
  * referencias absolutas como "ayer" u "hoy".
  */
 export function ageDurationLabel(days) {
-	if (days == null) return '';
-	if (days === 0) return 'el mismo día';
-	if (days < 60) return `${days} ${days === 1 ? 'día' : 'días'}`;
+	if (days == null) return "";
+	if (days === 0) return "el mismo día";
+	if (days < 60) return `${days} ${days === 1 ? "día" : "días"}`;
 	if (days < 730) {
 		const m = Math.round(days / 30);
-		return `${m} ${m === 1 ? 'mes' : 'meses'}`;
+		return `${m} ${m === 1 ? "mes" : "meses"}`;
 	}
 	const y = Math.round(days / 365);
-	return `${y} ${y === 1 ? 'año' : 'años'}`;
+	return `${y} ${y === 1 ? "año" : "años"}`;
 }
 
 /**
@@ -48,28 +40,28 @@ export function ageDurationLabel(days) {
  * "hace 2 días".
  */
 export function relativeFromNow(iso, ref = new Date()) {
-	if (!iso) return '';
+	if (!iso) return "";
 	const dt = new Date(iso);
-	if (Number.isNaN(dt.getTime())) return '';
+	if (Number.isNaN(dt.getTime())) return "";
 	const ms = Math.max(0, ref.getTime() - dt.getTime());
 	const hours = Math.floor(ms / (3600 * 1000));
 	if (hours < 24) {
-		if (hours < 1) return 'hace menos de una hora';
-		return `hace ${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+		if (hours < 1) return "hace menos de una hora";
+		return `hace ${hours} ${hours === 1 ? "hora" : "horas"}`;
 	}
 	const days = Math.floor(ms / MS_PER_DAY);
-	return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
+	return `hace ${days} ${days === 1 ? "día" : "días"}`;
 }
 
 /** Etiqueta larga "hace 3 días" / "hace 5 meses" / "hace 12 años". */
 export function ageLongLabel(days) {
-	if (days == null) return '';
-	if (days < 2) return days === 0 ? 'hoy' : 'ayer';
+	if (days == null) return "";
+	if (days < 2) return days === 0 ? "hoy" : "ayer";
 	if (days < 60) return `hace ${days} días`;
 	if (days < 730) {
 		const m = Math.round(days / 30);
-		return `hace ${m} ${m === 1 ? 'mes' : 'meses'}`;
+		return `hace ${m} ${m === 1 ? "mes" : "meses"}`;
 	}
 	const y = Math.round(days / 365);
-	return `hace ${y} ${y === 1 ? 'año' : 'años'}`;
+	return `hace ${y} ${y === 1 ? "año" : "años"}`;
 }

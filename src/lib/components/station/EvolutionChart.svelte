@@ -12,9 +12,8 @@ La geometría se calcula con d3 (escalas + generadores de path); el render lo
 hace Svelte.
 -->
 <script>
-	import { fmtDate, fmtTemp } from "$lib/utils/format.js";
+	import { fmtDate, fmtNum, fmtTemp } from "$lib/utils/format.js";
 	import { ageDurationLabel, ageLongLabel, daysSince } from "$lib/utils/age.js";
-	import { colorForDays } from "$lib/utils/colors.js";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 	import { scaleLinear, scaleTime } from "d3-scale";
@@ -46,10 +45,9 @@ hace Svelte.
 	};
 
 	/** Geometría del gráfico: escalas, paths e hitos a partir de los eventos. */
-	function buildChart(events, fam, width, height, sinDatos) {
+	function buildChart(events, width, height, sinDatos) {
 		if (events.length === 0 || width <= 0) return null;
 		const asc = [...events].sort((a, b) => a.fecha.localeCompare(b.fecha));
-		const firstFecha = asc[0].fecha;
 
 		const first = new Date(asc[0].fecha);
 		// Dominio temporal con un mínimo de 1 día (evita una escala degenerada
@@ -70,18 +68,10 @@ hace Svelte.
 		const x = scaleTime().domain([first, last]).range([PAD.left, rightEdge]);
 		const y = scaleLinear().domain([yLo, yHi]).range([baseline, PAD.top]);
 
-		const valRange = yMax - yMin || 1;
-		const dot = FAMILY_COLOR[fam].dot;
 		const pts = asc.map((e) => ({
 			...e,
 			x: x(new Date(e.fecha)),
 			y: y(e.valor),
-			esPrimero: e.fecha === firstFecha,
-			color: dot,
-			// Para las barras de la lista: posición del valor dentro del rango
-			// de la serie, con un mínimo del 6% para que siempre se vea algo.
-			pct: 6 + ((e.valor - yMin) / valRange) * 94,
-			barColor: colorForDays(fam === "max", daysSince(e.fecha)),
 		}));
 
 		// Bandas de "sin datos": tramos de cobertura ausente (≥7 días) que el
@@ -131,7 +121,7 @@ hace Svelte.
 		return { line, area, points: pts, gaps, baseline, rightEdge, yLabels, yearTicks };
 	}
 
-	const chart = $derived(buildChart(events, fam, svgWidth, HEIGHT, sinDatos));
+	const chart = $derived(buildChart(events, svgWidth, HEIGHT, sinDatos));
 	const fc = $derived(FAMILY_COLOR[fam]);
 	// Último récord de la serie (para el resumen por defecto de la línea de info).
 	const latest = $derived(
@@ -148,9 +138,8 @@ hace Svelte.
 			· {fmtDate(p.fecha)}{#if p.provisional}<ProvisionalTag />{/if}
 			{#if p.valorAnterior != null}
 				<span class="muted">
-					— {p.valor > p.valorAnterior ? "+" : "−"}{Math.abs(
-						p.valor - p.valorAnterior,
-					).toFixed(1)}°C sobre {fmtTemp(p.valorAnterior)} ·
+					— {p.valor > p.valorAnterior ? "+" : "−"}{fmtNum(Math.abs(p.valor - p.valorAnterior))}°C
+					sobre {fmtTemp(p.valorAnterior)} ·
 					{ageDurationLabel(p.diasDesdeAnterior)} después
 				</span>
 			{/if}
@@ -164,16 +153,22 @@ hace Svelte.
 			<span class="muted">· {ageLongLabel(daysSince(latest.fecha))}</span>
 			{#if latest.valorAnterior != null}
 				<span class="muted">
-					— {latest.valor > latest.valorAnterior ? "+" : "−"}{Math.abs(
-						latest.valor - latest.valorAnterior,
-					).toFixed(1)}°C sobre {fmtTemp(latest.valorAnterior)}
+					— {latest.valor > latest.valorAnterior ? "+" : "−"}{fmtNum(
+						Math.abs(latest.valor - latest.valorAnterior),
+					)}°C sobre {fmtTemp(latest.valorAnterior)}
 				</span>
 			{/if}
 		</p>
 	{/if}
 </div>
 
-<svg bind:clientWidth={svgWidth} width="100%" height={HEIGHT} role="img" aria-label="Evolución del récord">
+<svg
+	bind:clientWidth={svgWidth}
+	width="100%"
+	height={HEIGHT}
+	role="img"
+	aria-label="Evolución del récord"
+>
 	{#if chart}
 		<!-- Tramos sin cobertura: rayado diagonal tenue, como capa inferior. -->
 		<defs>
@@ -189,16 +184,35 @@ hace Svelte.
 			</pattern>
 		</defs>
 		{#each chart.gaps as g (g.desde)}
-			<rect x={g.x1} y={PAD.top} width={g.x2 - g.x1} height={chart.baseline - PAD.top} fill="url(#nodata-{fam})">
+			<rect
+				x={g.x1}
+				y={PAD.top}
+				width={g.x2 - g.x1}
+				height={chart.baseline - PAD.top}
+				fill="url(#nodata-{fam})"
+			>
 				<title>Sin datos · {g.dias} días ({fmtDate(g.desde)} – {fmtDate(g.hasta)})</title>
 			</rect>
 		{/each}
 
 		<!-- Cuadrícula horizontal en los valores extremos -->
 		{#each chart.yLabels as l (l.value)}
-			<line x1={PAD.left} x2={chart.rightEdge} y1={l.y} y2={l.y} stroke="#ddd" stroke-dasharray="2 3" />
-			<text x={PAD.left - 6} y={l.y} class="axis axis-y" text-anchor="end" dominant-baseline="middle">
-				{l.value.toFixed(1)}°
+			<line
+				x1={PAD.left}
+				x2={chart.rightEdge}
+				y1={l.y}
+				y2={l.y}
+				stroke="#ddd"
+				stroke-dasharray="2 3"
+			/>
+			<text
+				x={PAD.left - 6}
+				y={l.y}
+				class="axis axis-y"
+				text-anchor="end"
+				dominant-baseline="middle"
+			>
+				{fmtNum(l.value)}°
 			</text>
 		{/each}
 
@@ -212,8 +226,8 @@ hace Svelte.
 				cx={p.x}
 				cy={p.y}
 				r={hovered === i ? POINT_R_HOVER : POINT_R}
-				fill={p.provisional ? "#fff" : p.color}
-				stroke={p.provisional ? p.color : "#fff"}
+				fill={p.provisional ? "#fff" : fc.dot}
+				stroke={p.provisional ? fc.dot : "#fff"}
 				stroke-width={p.provisional ? 2 : 1}
 				onmouseenter={() => (hovered = i)}
 				onmouseleave={() => (hovered = -1)}
@@ -227,7 +241,12 @@ hace Svelte.
 
 		<!-- Eje X: años -->
 		{#each chart.yearTicks as t (t.label)}
-			<text x={t.x} y={HEIGHT - 8} class="axis axis-x" text-anchor={t.x === PAD.left ? "start" : "end"}>
+			<text
+				x={t.x}
+				y={HEIGHT - 8}
+				class="axis axis-x"
+				text-anchor={t.x === PAD.left ? "start" : "end"}
+			>
 				{t.label}
 			</text>
 		{/each}

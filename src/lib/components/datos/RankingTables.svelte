@@ -15,18 +15,19 @@ silenciosamente para no romper la página.
 -->
 <script>
 	import { fetchRankings } from "$lib/data/data.js";
-	import { MESES } from "$lib/utils/format.js";
+	import { fmtDateShort, fmtNum, fmtTemp, MESES } from "$lib/utils/format.js";
 	import { daysSince, ageLongLabel } from "$lib/utils/age.js";
 	import { flip } from "svelte/animate";
 	import { fly } from "svelte/transition";
 
 	let rk = $state(null);
-	let failed = $state(false);
 
 	$effect(() => {
 		fetchRankings()
 			.then((r) => (rk = r))
-			.catch(() => (failed = true));
+			// Si rankings.json aún no está publicado (404), rk queda null y la
+			// sección no se pinta.
+			.catch(() => {});
 	});
 
 	// --- controles ------------------------------------------------------
@@ -36,28 +37,8 @@ silenciosamente para no romper la página.
 	let actPeriodo = $state("esteAnio"); // 'esteAnio' | 'ultimos12m'
 
 	// --- formato --------------------------------------------------------
-	function fmtT(v) {
-		return v == null
-			? "—"
-			: `${v.toLocaleString("es-ES", {
-					minimumFractionDigits: 1,
-					maximumFractionDigits: 1,
-				})} °C`;
-	}
 	function fmtDelta(v) {
-		return v == null
-			? ""
-			: `+${v.toLocaleString("es-ES", {
-					minimumFractionDigits: 1,
-					maximumFractionDigits: 1,
-				})}`;
-	}
-	function fmtFecha(s) {
-		return new Date(s).toLocaleDateString("es-ES", {
-			day: "numeric",
-			month: "short",
-			year: "numeric",
-		});
+		return v == null ? "" : `+${fmtNum(v)}`;
 	}
 	function anyo(s) {
 		return s ? s.slice(0, 4) : "";
@@ -80,7 +61,7 @@ silenciosamente para no romper la página.
 	const actRows = $derived(rk ? rk.masActivas[actPeriodo] : []);
 </script>
 
-{#if rk && !failed}
+{#if rk}
 	<section class="rankings">
 		<header class="sec-head">
 			<h2>Clasificaciones</h2>
@@ -145,10 +126,10 @@ silenciosamente para no romper la página.
 								</td>
 								<td class="r">
 									<span class="fig {topFam}" class:abs={topMes === 0 || r.abs}>
-										{fmtT(r.valor)}
+										{fmtTemp(r.valor)}
 									</span>
 								</td>
-								<td class="r hide-sm fecha">{fmtFecha(r.fecha)}</td>
+								<td class="r hide-sm fecha">{fmtDateShort(r.fecha)}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -185,13 +166,13 @@ silenciosamente para no romper la página.
 									</td>
 									<td class="r">
 										<span class="fig {famOf(r.tipo)}" class:abs={esAbs(r.tipo)}>
-											{fmtT(r.valor)}
+											{fmtTemp(r.valor)}
 										</span>
 										{#if r.valorAnterior != null}<span class="prev">
-												antes {fmtT(r.valorAnterior)}
+												antes {fmtTemp(r.valorAnterior)}
 											</span>{/if}
 									</td>
-									<td class="r hide-sm fecha">{fmtFecha(r.fecha)}</td>
+									<td class="r hide-sm fecha">{fmtDateShort(r.fecha)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -242,7 +223,7 @@ silenciosamente para no romper la página.
 										<span class="prov">{r.prov}</span>
 									</td>
 									<td class="r">
-										<span class="fig {longFam} abs">{fmtT(r.valor)}</span>
+										<span class="fig {longFam} abs">{fmtTemp(r.valor)}</span>
 									</td>
 									<td class="r fecha">
 										{anyo(r.fecha)}
@@ -285,7 +266,7 @@ silenciosamente para no romper la página.
 										<span class="fig {famOf(r.tipo)} abs">{fmtDelta(r.salto)} °C</span>
 									</td>
 									<td class="r hide-sm fecha">
-										{fmtT(r.valorAnterior)} → {fmtT(r.valor)}
+										{fmtTemp(r.valorAnterior)} → {fmtTemp(r.valor)}
 										<span class="prev">{anyo(r.fecha)}</span>
 									</td>
 								</tr>

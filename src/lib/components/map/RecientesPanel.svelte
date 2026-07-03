@@ -1,6 +1,6 @@
 <!--
 @component
-RecientesPanel.svelte — listado de estaciones con récord en el último mes.
+RecientesPanel.svelte — listado de estaciones con récord en los últimos 15 días.
 
 Caja flotante (esquina inferior izquierda del mapa) con paginación de 10 en 10
 y un botón en la cabecera para colapsar/expandir el listado.
@@ -12,6 +12,7 @@ Props:
 <script>
 	import { slide } from "svelte/transition";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
+	import { fmtTemp } from "$lib/utils/format.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
 	let { recientes = [], onSelect = null, selected } = $props();
@@ -23,7 +24,7 @@ Props:
 
 	// Al cambiar el listado (e.g., al cambiar de familia), vuelve al inicio.
 	$effect(() => {
-		recientes.length;
+		recientes;
 		offset = 0;
 	});
 
@@ -66,10 +67,11 @@ Props:
 									{#if n > 1}<span class="badge">×{n}</span>{/if}
 								</span>
 								<span class="rec-meta">
-									{ult.valor.toFixed(1)} °C ·
+									{fmtTemp(ult.valor)} ·
 									{new Date(ult.fecha).toLocaleDateString("es-ES", {
 										day: "numeric",
 										month: "short",
+										timeZone: "UTC",
 									})} · Récord {ult.esAbsoluto
 										? "absoluto"
 										: "mensual"}{#if ult.provisional}<ProvisionalTag />{/if}
