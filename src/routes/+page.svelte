@@ -333,18 +333,6 @@
 </div>
 
 <style>
-	:global(html),
-	:global(body) {
-		margin: 0;
-		padding: 0;
-		height: 100%;
-		background: var(--bg);
-		color: var(--ink);
-		font-family: var(--font);
-		box-sizing: border-box;
-		-webkit-font-smoothing: antialiased;
-		text-rendering: optimizeLegibility;
-	}
 	.root {
 		position: fixed;
 		inset: 0;

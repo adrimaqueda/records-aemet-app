@@ -221,16 +221,6 @@
 </div>
 
 <style>
-	:global(html),
-	:global(body) {
-		margin: 0;
-		padding: 0;
-		background: var(--bg);
-		color: var(--ink);
-		font-family: var(--font);
-		-webkit-font-smoothing: antialiased;
-		text-rendering: optimizeLegibility;
-	}
 	.page {
 		max-width: 760px;
 		margin: 0 auto;

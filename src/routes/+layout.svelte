@@ -10,8 +10,20 @@
 {@render children()}
 
 <style>
-	/* Tokens de diseño compartidos por toda la app (mapa, estación, datos).
-	   Cada ruta define su propio fondo de body; aquí solo viven las variables. */
+	/* Tokens de diseño y reset de html/body compartidos por toda la app.
+	   OJO: no poner height en body — limitaría el bloque contenedor del
+	   TopBar sticky y dejaría de pegarse al hacer scroll. */
+	:global(html),
+	:global(body) {
+		margin: 0;
+		padding: 0;
+		background: var(--bg);
+		color: var(--ink);
+		font-family: var(--font);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
 	:global(:root) {
 		--bg: #fefefe;
 		--surface: #ffffff;

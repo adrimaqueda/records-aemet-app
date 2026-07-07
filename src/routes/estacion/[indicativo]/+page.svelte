@@ -8,18 +8,14 @@
 	import RecordsEvolution from "$lib/components/station/RecordsEvolution.svelte";
 
 	const indicativo = $derived(page.params.indicativo);
-	const detailPromise = $derived(
-		indicativo ? fetchStationDetail(indicativo) : null,
-	);
+	const detailPromise = $derived(indicativo ? fetchStationDetail(indicativo) : null);
 </script>
 
 <svelte:head>
 	{#await detailPromise then detail}
-		<title
-			>{detail
-				? `${detail.nombre} · Récords de temperatura`
-				: "Estación · Récords de temperatura"}</title
-		>
+		<title>
+			{detail ? `${detail.nombre} · Récords de temperatura` : "Estación · Récords de temperatura"}
+		</title>
 	{/await}
 </svelte:head>
 
@@ -49,17 +45,6 @@
 </div>
 
 <style>
-	:global(html),
-	:global(body) {
-		margin: 0;
-		padding: 0;
-		background: var(--bg);
-		color: var(--ink);
-		font-family: var(--font);
-		-webkit-font-smoothing: antialiased;
-		text-rendering: optimizeLegibility;
-	}
-
 	.page {
 		max-width: 880px;
 		margin: 0 auto;
