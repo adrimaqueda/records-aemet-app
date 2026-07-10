@@ -1,3 +1,6 @@
-# allow crawling everything by default
+# Se permite el rastreo a todos los bots, incluidos los de buscadores de LLMs
+# (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, etc.).
 User-agent: *
 Disallow:
+
+Sitemap: https://records-temperatura.adrimaqueda.com/sitemap.xml

@@ -1,43 +1,107 @@
 <!doctype html>
 <html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
 
-<head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<meta name="text-scale" content="scale" />
+		<!-- Favicons (en /static) -->
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<meta name="theme-color" content="#fefefe" />
 
-	<!-- Favicons (en /static) -->
-	<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-	<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png" />
-	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-	<meta name="theme-color" content="#fefefe" />
+		<!-- SEO: valores por defecto (los de la home). hooks.server.js reescribe
+	     description, canónica y OG/Twitter por ruta en el HTML servido. -->
+		<link rel="canonical" href="https://records-temperatura.adrimaqueda.com/" />
+		<meta
+			name="description"
+			content="Cada estación de AEMET y el último récord de calor que ha batido, en un mapa de España que se actualiza a diario."
+		/>
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="Récords de temperatura" />
+		<meta property="og:locale" content="es_ES" />
+		<meta property="og:title" content="Récords de temperatura en España" />
+		<meta
+			property="og:description"
+			content="Cada estación de AEMET y el último récord de calor que ha batido, en un mapa que se actualiza a diario."
+		/>
+		<meta property="og:url" content="https://records-temperatura.adrimaqueda.com/" />
+		<meta property="og:image" content="https://records-temperatura.adrimaqueda.com/og-image.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta
+			property="og:image:alt"
+			content="Mapa de España con los récords de temperatura de las estaciones de AEMET"
+		/>
 
-	<!-- SEO -->
-	<meta name="description"
-		content="Cada estación de AEMET y el último récord de calor que ha batido, en un mapa de España que se actualiza a diario." />
-	<meta property="og:type" content="website" />
-	<meta property="og:site_name" content="Récords de temperatura" />
-	<meta property="og:locale" content="es_ES" />
-	<meta property="og:title" content="Récords de temperatura en España" />
-	<meta property="og:description"
-		content="Cada estación de AEMET y el último récord de calor que ha batido, en un mapa que se actualiza a diario." />
-	<meta property="og:url" content="https://records-temperatura.adrimaqueda.com/" />
-	<meta property="og:image" content="https://records-temperatura.adrimaqueda.com/og-image.png" />
-	<meta property="og:image:width" content="1200" />
-	<meta property="og:image:height" content="630" />
-	<meta property="og:image:alt" content="Mapa de España con los récords de temperatura de las estaciones de AEMET" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="Récords de temperatura en España" />
+		<meta
+			name="twitter:description"
+			content="Cada estación de AEMET y el último récord de calor que ha batido, en un mapa que se actualiza a diario."
+		/>
+		<meta name="twitter:image" content="https://records-temperatura.adrimaqueda.com/og-image.png" />
 
-	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content="Récords de temperatura en España" />
-	<meta name="twitter:description"
-		content="Cada estación de AEMET y el último récord de calor que ha batido, en un mapa que se actualiza a diario." />
-	<meta name="twitter:image" content="https://records-temperatura.adrimaqueda.com/og-image.png" />
+		<!-- Datos estructurados: web + dataset (Google Dataset Search, LLMs) -->
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@graph": [
+					{
+						"@type": "WebSite",
+						"name": "Récords de temperatura",
+						"alternateName": "Récords de temperatura en España",
+						"url": "https://records-temperatura.adrimaqueda.com/",
+						"inLanguage": "es",
+						"description": "Cada estación de AEMET y el último récord de calor que ha batido, en un mapa de España que se actualiza a diario.",
+						"publisher": {
+							"@type": "Person",
+							"name": "Adrián Maqueda",
+							"url": "https://adrimaqueda.com"
+						}
+					},
+					{
+						"@type": "Dataset",
+						"name": "Récords de temperatura de las estaciones de AEMET",
+						"description": "Récords de temperatura máxima y mínima (absolutos y mensuales) de cada estación de la red de AEMET en España, calculados sobre la serie diaria completa de cada estación —desde que tiene datos disponibles— y actualizados dos veces al día.",
+						"url": "https://records-temperatura.adrimaqueda.com/",
+						"sameAs": "https://huggingface.co/datasets/adrimaqueda/records-aemet",
+						"inLanguage": "es",
+						"isAccessibleForFree": true,
+						"creator": {
+							"@type": "Person",
+							"name": "Adrián Maqueda",
+							"url": "https://adrimaqueda.com"
+						},
+						"isBasedOn": "https://opendata.aemet.es",
+						"spatialCoverage": { "@type": "Place", "name": "España" },
+						"keywords": [
+							"temperatura",
+							"récords de calor",
+							"AEMET",
+							"ola de calor",
+							"cambio climático",
+							"España",
+							"meteorología"
+						],
+						"license": "https://www.aemet.es/es/nota_legal",
+						"distribution": [
+							{
+								"@type": "DataDownload",
+								"encodingFormat": "application/json",
+								"contentUrl": "https://huggingface.co/datasets/adrimaqueda/records-aemet"
+							}
+						]
+					}
+				]
+			}
+		</script>
 
-	%sveltekit.head%
-</head>
+		%sveltekit.head%
+	</head>
 
-<body data-sveltekit-preload-data="hover">
-	<div style="display: contents">%sveltekit.body%</div>
-</body>
-
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
 </html>

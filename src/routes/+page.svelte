@@ -12,6 +12,7 @@
 		FAMILIA_TIPOS,
 	} from "$lib/data/data.js";
 	import { dayNumber, daysSince, relativeFromNow } from "$lib/utils/age.js";
+	import { PAGE_META } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
 	import { slide } from "svelte/transition";
@@ -166,7 +167,7 @@
 </script>
 
 <svelte:head>
-	<title>Récords de temperatura AEMET</title>
+	<title>{PAGE_META["/"].title}</title>
 </svelte:head>
 
 <div class="root">

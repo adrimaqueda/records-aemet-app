@@ -1,6 +1,7 @@
 <script>
 	import { fetchStats, fetchStations, fetchStationDetail, decodeStatsRow } from "$lib/data/data.js";
 	import { MESES } from "$lib/utils/format.js";
+	import { PAGE_META } from "$lib/seo.js";
 	import TopBar from "$lib/components/ui/TopBar.svelte";
 	import RankingTables from "$lib/components/datos/RankingTables.svelte";
 	import RecordsChart from "$lib/components/datos/RecordsChart.svelte";
@@ -231,7 +232,7 @@
 </script>
 
 <svelte:head>
-	<title>Datos · Récords de temperatura</title>
+	<title>{PAGE_META["/datos"].title}</title>
 </svelte:head>
 
 <TopBar current="datos" />
@@ -239,7 +240,7 @@
 <div class="page">
 	<main>
 		<header class="hero">
-			<p class="eyebrow">Red AEMET · histórico desde 1975</p>
+			<p class="eyebrow">Red AEMET · histórico completo</p>
 			<h1>Récords por año y mes</h1>
 			<p class="lead">
 				Agregado histórico de récords batidos en la red AEMET, con el porcentaje de estaciones que

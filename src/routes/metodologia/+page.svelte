@@ -1,10 +1,11 @@
 <script>
 	// Página estática; sin datos remotos.
 	import TopBar from "$lib/components/ui/TopBar.svelte";
+	import { PAGE_META } from "$lib/seo.js";
 </script>
 
 <svelte:head>
-	<title>Metodología · Récords de temperatura</title>
+	<title>{PAGE_META["/metodologia"].title}</title>
 </svelte:head>
 
 <TopBar current="metodologia" />
@@ -31,10 +32,10 @@
 				<a href="https://opendata.aemet.es" target="_blank" rel="noreferrer">
 					API OpenData de AEMET
 				</a>
-				para las actualizaciones incrementales. Solo se consideran observaciones a partir de
-				<strong>1975</strong>
-				, año a partir del cual la red tiene cobertura razonable (antes de esa fecha solo había unas pocas
-				estaciones operativas).
+				para las actualizaciones incrementales. Se usa la
+				<strong>serie completa de cada estación</strong>
+				desde que tiene observaciones disponibles: en las más antiguas los datos se remontan a principios
+				del siglo XX.
 			</p>
 		</section>
 

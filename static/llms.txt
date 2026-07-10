@@ -1,0 +1,24 @@
+# Récords de temperatura en España
+
+> Mapa interactivo con el último récord de calor batido por cada estación meteorológica de AEMET en España. Los datos se recalculan dos veces al día sobre la serie diaria completa de cada estación (desde que tiene datos disponibles) y distinguen cuatro categorías de récord: día más caluroso (TMAX absoluta), noche más cálida (TMIN más alta), y sus variantes mensuales.
+
+Proyecto de [Adrián Maqueda](https://adrimaqueda.com). Los datos procesados son abiertos y están publicados como dataset en Hugging Face; los datos brutos son de AEMET (OpenData y el dataset datania/aemet).
+
+## Páginas
+
+- [Mapa](https://records-temperatura.adrimaqueda.com/): cada estación de AEMET con su último récord de calor; el tamaño y color del punto indican cuánto hace del récord.
+- [Datos](https://records-temperatura.adrimaqueda.com/datos): agregado histórico de récords batidos por año y mes, filtrable por provincia y estación.
+- [Metodología](https://records-temperatura.adrimaqueda.com/metodologia): fuente de datos, definición exacta de récord, tratamiento de récords provisionales y licencia.
+- Ficha de estación: `https://records-temperatura.adrimaqueda.com/estacion/{indicativo}` (indicativo AEMET, p. ej. `3195` para Madrid, Retiro), con sus récords vigentes, los mensuales y la evolución histórica.
+
+## Datos
+
+- [Dataset procesado en Hugging Face](https://huggingface.co/datasets/adrimaqueda/records-aemet): JSONs que consume la web (stations.json, stats.json, rankings.json y stations/{indicativo}.json).
+- [Código del pipeline](https://github.com/adrimaqueda/records-aemet-pipeline) y [de la web](https://github.com/adrimaqueda/records-aemet-app), abiertos en GitHub.
+- Datos brutos: [AEMET OpenData](https://opendata.aemet.es), sujetos a la nota legal de AEMET.
+
+## Notas
+
+- "Récord de mínima" significa la TMIN más alta (noche más cálida), no la más baja: las noches que no se enfrían son un indicador climático clave.
+- Los récords de los últimos 3-5 días pueden ser provisionales (estimados con la observación horaria) hasta que AEMET publica el dato definitivo.
+- Un récord solo cuenta como batido cuando la estación lleva al menos un año midiendo.
