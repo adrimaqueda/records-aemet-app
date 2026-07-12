@@ -103,10 +103,14 @@ hace Svelte.
 			.curve(curveStepAfter)(series);
 
 		// Ticks Y: arriba y abajo del rango real (yMax/yMin), no del padding.
-		const yLabels = [
-			{ value: yMax, y: y(yMax) },
-			{ value: yMin, y: y(yMin) },
-		];
+		// Si la serie es plana (un solo récord nunca batido), un único tick.
+		const yLabels =
+			yMax === yMin
+				? [{ value: yMax, y: y(yMax) }]
+				: [
+						{ value: yMax, y: y(yMax) },
+						{ value: yMin, y: y(yMin) },
+					];
 		// Ticks X: primer año y año actual.
 		const firstYear = first.getFullYear();
 		const lastYear = last.getFullYear();
