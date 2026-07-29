@@ -1,14 +1,29 @@
 <script>
 	import { page } from "$app/state";
 	import { fetchStationDetail } from "$lib/data/data.js";
+	import { latestInFamily } from "$lib/data/records.js";
+	import { colorForDays } from "$lib/utils/colors.js";
+	import { daysSince } from "$lib/utils/age.js";
 	import TopBar from "$lib/components/ui/TopBar.svelte";
 	import StationHero from "$lib/components/station/StationHero.svelte";
+	import StationMinimap from "$lib/components/station/StationMinimap.svelte";
 	import RecordsHeadline from "$lib/components/station/RecordsHeadline.svelte";
 	import RecordsMensuales from "$lib/components/station/RecordsMensuales.svelte";
 	import RecordsEvolution from "$lib/components/station/RecordsEvolution.svelte";
 
 	const indicativo = $derived(page.params.indicativo);
 	const detailPromise = $derived(indicativo ? fetchStationDetail(indicativo) : null);
+
+	/** Color de recencia del récord más reciente de la estación (cualquier
+	 *  familia): es el que pinta el anillo del minimapa, igual que el marcador
+	 *  de esa estación en el mapa grande. */
+	function ringColor(detail) {
+		const max = latestInFamily(detail, "max");
+		const min = latestInFamily(detail, "min");
+		const best = !max ? min : !min ? max : max.fecha >= min.fecha ? max : min;
+		if (!best) return null;
+		return colorForDays(best === max, daysSince(best.fecha));
+	}
 </script>
 
 <svelte:head>
@@ -30,10 +45,18 @@
 	{:then detail}
 		{#if detail}
 			<main>
-				<StationHero {detail} />
+				<!-- Cabecera + minimapa: en escritorio el medallón va a la izquierda
+				     del titular; en móvil la banda se coloca debajo (column-reverse). -->
+				<div class="hero-block">
+					<StationMinimap {detail} color={ringColor(detail)} />
+					<StationHero {detail} />
+				</div>
 				<RecordsHeadline {detail} />
 				<RecordsMensuales {detail} />
 				<RecordsEvolution {detail} />
+				<!-- El minimapa apaga el control de atribución de MapLibre (no cabe
+				     en un medallón de 172 px), así que el crédito va aquí, una vez. -->
+				<p class="credit">Cartografía © OpenFreeMap · © OpenStreetMap contributors</p>
 			</main>
 		{/if}
 	{:catch err}
@@ -54,6 +77,25 @@
 		display: flex;
 		flex-direction: column;
 		gap: clamp(2.5rem, 6vw, 4rem);
+	}
+
+	.hero-block {
+		display: flex;
+		align-items: center;
+		gap: 2rem;
+	}
+	@media (max-width: 699px) {
+		.hero-block {
+			flex-direction: column-reverse;
+			align-items: stretch;
+			gap: 1.6rem;
+		}
+	}
+
+	.credit {
+		margin: -1rem 0 0;
+		font-size: 0.75rem;
+		color: var(--faint);
 	}
 
 	.state {

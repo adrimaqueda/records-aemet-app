@@ -38,6 +38,10 @@ Uso:
 		],
 		theme = DEFAULT_THEME,
 		interactive = true,
+		// Control de atribución de MapLibre (esquina inferior derecha). Se puede
+		// apagar en minimapas decorativos, donde no cabe; en ese caso la
+		// atribución debe aparecer en algún otro sitio de la página.
+		attribution = true,
 		fill = false, // si true, ocupa todo el contenedor (sin aspect-ratio)
 		width = null,
 		height = null,
@@ -94,6 +98,10 @@ Uso:
 				.then(({ Map: MaplibreMap }) => {
 					if (!mounted) return;
 					instance = new MaplibreMap({
+						// MapLibre mezcla opciones con Object.assign, así que la clave
+						// solo puede aparecer cuando queremos apagar el control: pasarla
+						// como `undefined` pisaría el valor por defecto.
+						...(attribution ? {} : { attributionControl: false }),
 						container: node,
 						style: styleUrl,
 						center: [longitude, latitude],
