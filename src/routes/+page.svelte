@@ -11,6 +11,12 @@
 		FAMILIAS,
 		FAMILIA_TIPOS,
 	} from "$lib/data/data.js";
+	import {
+		ultimoVigenteEnFamilia,
+		anioDeVigente,
+		aniosConVigentes,
+		vigentesEnAnio,
+	} from "$lib/data/records.js";
 	import { dayNumber, daysSince, relativeFromNow } from "$lib/utils/age.js";
 	import { PAGE_META } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
@@ -22,6 +28,8 @@
 	let loading = $state(true);
 	let error = $state(null);
 	let familia = $state("max");
+	/** Año del filtro "récord vigente de" (null = todos los años). */
+	let anio = $state(null);
 	/** HUD desplegada (todo) o compacta (solo título y filtro). */
 	let hudExpanded = $state(true);
 	/** @type {{indicativo: string, color: string} | null} */
@@ -60,20 +68,6 @@
 			.catch((e) => console.warn("No se pudo cargar stats.json", e));
 	});
 
-	/** Para cada estación, devuelve el último récord de la familia seleccionada
-	 *  comparando absoluto y mensual y eligiendo el más reciente. */
-	function ultimoEnFamilia(s, fam) {
-		const { absoluto, mensual } = FAMILIA_TIPOS[fam];
-		const a = s.ultimoPorTipo[absoluto];
-		const m = s.ultimoPorTipo[mensual];
-		if (!a && !m) return null;
-		if (!a) return { ...m, esAbsoluto: false };
-		if (!m) return { ...a, esAbsoluto: true };
-		return new Date(a.fecha) >= new Date(m.fecha)
-			? { ...a, esAbsoluto: true }
-			: { ...m, esAbsoluto: false };
-	}
-
 	/** Total de récords batidos en los últimos 15 días para la familia. */
 	function countRecientes(s, fam) {
 		const { absoluto, mensual } = FAMILIA_TIPOS[fam];
@@ -81,11 +75,34 @@
 		return (r[absoluto] ?? 0) + (r[mensual] ?? 0);
 	}
 
+	/** Años en los que alguna estación tiene su récord vigente de la familia
+	 *  activa, de más reciente a más antiguo. */
+	const aniosOpts = $derived(aniosConVigentes(stations, familia));
+
+	// Al cambiar de familia, el año elegido puede quedarse sin ninguna estación
+	// (típico en años antiguos): en ese caso se vuelve a "cualquier año" en vez
+	// de dejar el mapa vacío sin explicación.
+	$effect(() => {
+		if (anio != null && aniosOpts.length > 0 && !aniosOpts.includes(anio)) anio = null;
+	});
+
+	/** Estaciones que se pintan: todas, o solo aquellas cuyo récord vigente de la
+	 *  familia activa se fijó en el año seleccionado. */
+	const visibles = $derived(
+		anio == null ? stations : stations.filter((s) => anioDeVigente(s, familia) === anio),
+	);
+
+	function setAnio(v) {
+		anio = v === "" ? null : +v;
+		// La estación abierta puede haber quedado fuera del filtro.
+		selected = null;
+	}
+
 	const geojson = $derived.by(() => {
-		const features = stations
+		const features = visibles
 			.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
 			.map((s) => {
-				const ult = ultimoEnFamilia(s, familia);
+				const ult = ultimoVigenteEnFamilia(s, familia);
 				const fecha = ult?.fecha ?? null;
 				const days = daysSince(fecha, now);
 				return {
@@ -101,6 +118,10 @@
 						valor: ult?.valor ?? null,
 						daysSinceRecord: days ?? 100000,
 						dayNumber: dayNumber(days),
+						// Con filtro de año, todas las estaciones mostradas son del mismo
+						// año: la escala de antigüedad deja de informar y la capa pinta
+						// todos los puntos igual.
+						uniforme: anio != null,
 					},
 				};
 			})
@@ -134,7 +155,7 @@
 	const recientes = $derived(
 		stations
 			.map((s) => {
-				const ult = ultimoEnFamilia(s, familia);
+				const ult = ultimoVigenteEnFamilia(s, familia);
 				const n = countRecientes(s, familia);
 				return { s, ult, n };
 			})
@@ -147,12 +168,34 @@
 			),
 	);
 
+	/** Lo que lista el panel flotante: los récords de los últimos 15 días o, con
+	 *  el filtro activo, todas las estaciones cuyo récord vigente es de ese año. */
+	const panelItems = $derived.by(() => {
+		if (anio == null) return recientes;
+		return visibles
+			.map((s) => ({
+				s,
+				ult: ultimoVigenteEnFamilia(s, familia),
+				n: vigentesEnAnio(s, familia, anio),
+			}))
+			.filter((x) => x.ult)
+			.sort(
+				(a, b) =>
+					b.ult.fecha.localeCompare(a.ult.fecha) ||
+					b.ult.valor - a.ult.valor ||
+					a.s.nombre.localeCompare(b.s.nombre, "es"),
+			);
+	});
+	const panelTitulo = $derived(anio == null ? "Récords recientes" : `Récords vigentes de ${anio}`);
+
 	function focusStation(s) {
 		// Recupera la estación completa (de stations[]) si nos pasan solo {indicativo,…}
 		const full = stations.find((x) => x.indicativo === s.indicativo) ?? s;
-		const ult = ultimoEnFamilia(full, familia);
+		const ult = ultimoVigenteEnFamilia(full, familia);
 		const days = daysSince(ult?.fecha, now);
-		const color = colorForDays(familia === "max", days);
+		// Con filtro de año el mapa pinta todos los puntos con el color vivo de la
+		// familia: el borde del panel tiene que coincidir con lo que se ve.
+		const color = colorForDays(familia === "max", anio == null ? days : 0);
 
 		selected = { indicativo: s.indicativo, color };
 		if (mapRef) {
@@ -244,10 +287,32 @@
 				</button>
 			{/each}
 		</div>
+		<!-- Filtro de año: deja en el mapa solo las estaciones cuyo récord vigente
+		     (el que sigue en pie hoy) se fijó en ese año. -->
+		<div class="year-filter">
+			<label for="filtro-anio">Récord vigente de</label>
+			<select
+				id="filtro-anio"
+				value={anio == null ? "" : String(anio)}
+				onchange={(e) => setAnio(e.currentTarget.value)}
+				disabled={aniosOpts.length === 0}
+			>
+				<option value="">Cualquier año</option>
+				{#each aniosOpts as y (y)}
+					<option value={String(y)}>{y}</option>
+				{/each}
+			</select>
+		</div>
 		{#if hudExpanded}
 			<div class="extra" transition:slide={{ duration: 220 }}>
 				<p class="muted">
-					{stations.length.toLocaleString("es-ES")} estaciones
+					{#if anio == null}
+						{stations.length.toLocaleString("es-ES")} estaciones
+					{:else}
+						<b>{visibles.length.toLocaleString("es-ES")}</b>
+						de {stations.length.toLocaleString("es-ES")} estaciones tienen su récord de
+						{FAMILIA_SHORT[familia].toLowerCase()} vigente fechado en {anio}
+					{/if}
 					{#if ultimaActualizacion}
 						<br />
 						Datos actualizados
@@ -282,18 +347,28 @@
 				</p>
 				<details class="legend">
 					<summary>Leyenda</summary>
-					<div class="row">
-						<span class="dot-wrap"><span class="dot dot-fresh size-fresh"></span></span>
-						<span>Último mes — grande, vibrante, con etiqueta y halo</span>
-					</div>
-					<div class="row">
-						<span class="dot-wrap"><span class="dot dot-year size-year"></span></span>
-						<span>Hace meses</span>
-					</div>
-					<div class="row">
-						<span class="dot-wrap"><span class="dot dot-old size-old"></span></span>
-						<span>Hace años — pequeño y desvaído</span>
-					</div>
+					{#if anio == null}
+						<div class="row">
+							<span class="dot-wrap"><span class="dot dot-fresh size-fresh"></span></span>
+							<span>Último mes — grande, vibrante, con etiqueta y halo</span>
+						</div>
+						<div class="row">
+							<span class="dot-wrap"><span class="dot dot-year size-year"></span></span>
+							<span>Hace meses</span>
+						</div>
+						<div class="row">
+							<span class="dot-wrap"><span class="dot dot-old size-old"></span></span>
+							<span>Hace años — pequeño y desvaído</span>
+						</div>
+					{:else}
+						<div class="row">
+							<span class="dot-wrap"><span class="dot dot-fresh size-uniform"></span></span>
+							<span>
+								Con un año seleccionado todas las estaciones son de ese año: se pintan todas igual,
+								sin escala de antigüedad.
+							</span>
+						</div>
+					{/if}
 					<hr />
 					<div class="row">
 						<span class="dot-wrap">
@@ -323,7 +398,7 @@
 		{/if}
 	</header>
 
-	<RecientesPanel {recientes} onSelect={focusStation} {selected} />
+	<RecientesPanel recientes={panelItems} titulo={panelTitulo} onSelect={focusStation} {selected} />
 
 	<StationPanel
 		indicativo={selected?.indicativo ?? null}
@@ -443,6 +518,46 @@
 	.filter button.active {
 		color: #fff;
 	}
+	/* Filtro de año: mismo lenguaje visual que los selectores de /datos. */
+	.year-filter {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+	.year-filter label {
+		font-size: 0.68rem;
+		color: var(--faint);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.year-filter select {
+		flex: 1 1 auto;
+		min-width: 0;
+		font: inherit;
+		font-size: 0.8rem;
+		padding: 0.3rem 1.7rem 0.3rem 0.7rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 999px;
+		background-color: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+		appearance: none;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c6c70' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 0.6rem center;
+		transition: border-color 0.15s ease;
+	}
+	.year-filter select:hover {
+		border-color: var(--muted);
+	}
+	.year-filter select:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
 	.extra {
 		margin-top: 0.6rem;
 	}
@@ -555,6 +670,11 @@
 		width: 4px;
 		height: 4px;
 		border-width: 0;
+	}
+	.size-uniform {
+		width: 9px;
+		height: 9px;
+		border-width: 0.8px;
 	}
 	.ring {
 		position: absolute;

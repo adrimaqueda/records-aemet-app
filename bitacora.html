@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitácora de cambios · Récords de temperatura · AEMET</title>
+<style>
+  :root {
+    --fondo: #fbfbfa;
+    --texto: #1f1f1d;
+    --texto-suave: #5c5c57;
+    --linea: #e6e6e2;
+    --tarjeta: #ffffff;
+    --acento: #2f6f4f;
+    --codigo-fondo: #f1f1ee;
+    --codigo-texto: #3a3a36;
+    --feature: #2f6f4f;  --feature-bg: #e8f3ec;
+    --refactor: #2a5b8c; --refactor-bg: #e7eff7;
+    --fix: #8a5a12;      --fix-bg: #f7efe0;
+    --infra: #5a4a8a;    --infra-bg: #ece8f6;
+    --datos: #156b73;    --datos-bg: #e3f1f2;
+    --seguridad: #9a3434;--seguridad-bg: #f7e6e6;
+    --rendimiento: #6b5a12; --rendimiento-bg: #f4f1e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #16161a;
+      --texto: #ececea;
+      --texto-suave: #a0a09a;
+      --linea: #2c2c33;
+      --tarjeta: #1d1d22;
+      --acento: #6fb98f;
+      --codigo-fondo: #26262c;
+      --codigo-texto: #d4d4d0;
+      --feature: #8fd4ad; --feature-bg: #1c3329;
+      --refactor: #9cc2e6; --refactor-bg: #1a2a3a;
+      --fix: #e0b878;     --fix-bg: #33291a;
+      --infra: #b4a4e0;   --infra-bg: #272240;
+      --datos: #7fd0d6;   --datos-bg: #15333540;
+      --seguridad: #e09a9a; --seguridad-bg: #3a1f1f;
+      --rendimiento: #ddc878; --rendimiento-bg: #33301a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--fondo);
+    color: var(--texto);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    font-size: 17px;
+  }
+  .envoltorio { max-width: 720px; margin: 0 auto; padding: 56px 24px 96px; }
+  header.cabecera-doc { margin-bottom: 8px; }
+  header.cabecera-doc h1 {
+    font-size: 1.7rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  header.cabecera-doc .intro {
+    color: var(--texto-suave);
+    font-size: 0.98rem;
+    margin: 0;
+    max-width: 60ch;
+  }
+  .separador-doc { border: 0; border-top: 1px solid var(--linea); margin: 32px 0; }
+
+  article.entrada {
+    background: var(--tarjeta);
+    border: 1px solid var(--linea);
+    border-radius: 12px;
+    padding: 24px 26px;
+    margin-bottom: 22px;
+  }
+  .entrada-cabecera {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .entrada time { color: var(--texto-suave); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  .etiqueta {
+    display: inline-block;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+  .etiqueta-feature { color: var(--feature); background: var(--feature-bg); }
+  .etiqueta-refactor { color: var(--refactor); background: var(--refactor-bg); }
+  .etiqueta-fix { color: var(--fix); background: var(--fix-bg); }
+  .etiqueta-infra { color: var(--infra); background: var(--infra-bg); }
+  .etiqueta-datos { color: var(--datos); background: var(--datos-bg); }
+  .etiqueta-seguridad { color: var(--seguridad); background: var(--seguridad-bg); }
+  .etiqueta-rendimiento { color: var(--rendimiento); background: var(--rendimiento-bg); }
+
+  article.entrada h2 {
+    font-size: 1.22rem;
+    font-weight: 640;
+    letter-spacing: -0.01em;
+    margin: 4px 0 10px;
+  }
+  .resumen {
+    font-size: 1.02rem;
+    color: var(--texto);
+    margin: 0 0 18px;
+    padding-left: 14px;
+    border-left: 3px solid var(--acento);
+  }
+  article.entrada section { margin: 16px 0; }
+  article.entrada section h3 {
+    font-size: 0.78rem;
+    font-weight: 680;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--texto-suave);
+    margin: 0 0 6px;
+  }
+  article.entrada section p { margin: 0 0 10px; }
+  article.entrada section p:last-child { margin-bottom: 0; }
+  .alternativas { margin: 0; padding: 0; list-style: none; }
+  .alternativas li {
+    margin: 0 0 10px;
+    padding-left: 16px;
+    position: relative;
+  }
+  .alternativas li:last-child { margin-bottom: 0; }
+  .alternativas li::before {
+    content: "↳";
+    position: absolute;
+    left: 0;
+    color: var(--texto-suave);
+  }
+  .alternativas .opcion { font-weight: 600; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--codigo-fondo);
+    color: var(--codigo-texto);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+  details.archivos { margin-top: 18px; }
+  details.archivos summary {
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--texto-suave);
+    font-weight: 600;
+  }
+  details.archivos ul { margin: 10px 0 0; padding-left: 4px; list-style: none; }
+  details.archivos li { margin: 4px 0; }
+  footer.pie-doc {
+    margin-top: 48px;
+    color: var(--texto-suave);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="envoltorio">
+    <header class="cabecera-doc">
+      <h1>Bitácora de cambios · Récords de temperatura · AEMET</h1>
+      <p class="intro">Este documento explica, en lenguaje sencillo, los cambios importantes del proyecto: qué se hizo, por qué se hizo así y qué alternativas se descartaron. Está pensado para que cualquiera pueda entenderlo, sin necesidad de conocimientos técnicos. Lo más reciente aparece arriba.</p>
+    </header>
+    <hr class="separador-doc">
+    <!-- NUEVA_ENTRADA_AQUI -->
+    <article class="entrada">
+      <div class="entrada-cabecera">
+        <span class="etiqueta etiqueta-feature">Nueva funcionalidad</span>
+        <time>2026-08-19</time>
+      </div>
+      <h2>Ver qué récords siguen en pie de cada año</h2>
+      <p class="resumen">El mapa permite quedarse solo con las estaciones cuyo récord actual se fijó en un año concreto, y la página de datos añade una gráfica con esa misma cuenta año a año.</p>
+      <section>
+        <h3>Qué se hizo</h3>
+        <p>En el mapa hay un desplegable nuevo, «Récord vigente de», que arranca en «cualquier año». Al elegir un año, el mapa deja en pantalla solo las estaciones cuyo récord aún en pie se fijó ese año, el contador de la cabecera dice cuántas son y el listado flotante pasa a titularse «Récords vigentes de 2026» y a enumerarlas en vez de mostrar los últimos quince días.</p>
+        <p>En la página de datos hay una tercera vista, «Vigentes», junto a «Año a año» y «Mes a mes». Usa la misma gráfica de barras de siempre —máxima hacia arriba, mínima hacia abajo— pero cada barra cuenta las estaciones cuyo récord actual es de ese año. Funciona también al filtrar por provincia.</p>
+        <p>Las dos pantallas comparten el mismo cálculo, que vive en un único archivo. Eso garantiza que la barra de 2026 de la gráfica sea exactamente el número de puntos que se ven en el mapa al filtrar por 2026: no pueden desviarse.</p>
+      </section>
+      <section>
+        <h3>Por qué se hizo así</h3>
+        <p>Hay que distinguir dos cosas que suenan igual pero no lo son. La gráfica que ya existía cuenta récords batidos: si en 2013 se batió uno que en 2022 quedó superado, sigue contando en 2013. Lo nuevo cuenta lo contrario: de los récords que hoy siguen en pie, en qué año se fijaron.</p>
+        <p>Esa segunda cuenta no está en los datos agregados que publica el proceso de datos, así que se calcula en el navegador a partir del catálogo de estaciones, que ya se descargaba igualmente. De ese catálogo se puede saber, para cada estación, la fecha de su récord vigente más reciente. Por eso la unidad que se cuenta es la estación —cada una cuenta una vez por familia, máxima y mínima—, y así se dice en los textos de ambas pantallas.</p>
+        <p>En el mapa había un problema aparte: el tamaño y el color de cada punto dependen de cuánto hace del récord. Con un año antiguo seleccionado, todos los puntos serían grises y diminutos y el mapa parecería vacío. Como al filtrar por año todas las estaciones mostradas son del mismo año, esa escala ya no informa de nada, así que en ese modo se pintan todas igual: tamaño medio y color vivo. Se mantienen el anillo blanco de los récords absolutos y la marca de los provisionales, que sí siguen distinguiendo.</p>
+      </section>
+      <section>
+        <h3>Otras opciones que se descartaron</h3>
+        <ul class="alternativas">
+          <li><span class="opcion">Contar récords en vez de estaciones, pidiendo un dato nuevo al proceso que genera los ficheros:</span> Sería la cifra ideal —una estación puede tener varios récords mensuales aún en pie del mismo año—, pero ese proceso vive en otro repositorio y habría dejado la funcionalidad bloqueada. Se puede añadir más adelante sin tirar nada de lo hecho.</li>
+          <li><span class="opcion">Contar récords de forma aproximada con lo que ya hay:</span> Se podría hablar de «récords» sumando el absoluto y el mensual de cada estación, pero se quedarían fuera los mensuales anteriores al último: daría una cifra corta presentada como si fuera exacta. Preferible una cuenta exacta de estaciones que una inexacta de récords.</li>
+          <li><span class="opcion">Descargar el detalle completo de cada estación para tener la cuenta exacta:</span> Obligaría a pedir un fichero por estación, cerca de un millar de descargas cada vez que alguien abre el mapa. Inviable.</li>
+          <li><span class="opcion">Mantener en el mapa la escala de color y tamaño por antigüedad al filtrar por año:</span> Los años pasados quedarían como puntos grises de milímetro y medio, prácticamente invisibles. La escala deja de aportar cuando todos los puntos son del mismo año.</li>
+          <li><span class="opcion">Poner la gráfica nueva en una sección aparte de la página de datos:</span> Obligaría a duplicar los selectores de ámbito y alargaría la página. Como tercera vista reutiliza la gráfica y los controles que ya estaban.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Qué cambia</h3>
+        <p>Se puede responder de un vistazo a «qué récords de los que siguen en pie son de este año», tanto sobre el mapa como en la gráfica, y comprobar que ambas cifras coinciden. No cambia nada de lo que ya funcionaba: sin año seleccionado, el mapa y las dos vistas anteriores se comportan igual que antes.</p>
+      </section>
+      <details class="archivos">
+        <summary>Archivos afectados</summary>
+        <ul>
+          <li><code>src/lib/data/records.js</code></li>
+          <li><code>src/routes/+page.svelte</code></li>
+          <li><code>src/routes/datos/+page.svelte</code></li>
+          <li><code>src/lib/components/map/StationsLayer.svelte</code></li>
+          <li><code>src/lib/components/map/RecientesPanel.svelte</code></li>
+          <li><code>src/lib/components/datos/RecordsChart.svelte</code></li>
+        </ul>
+      </details>
+    </article>
+    <footer class="pie-doc">Bitácora generada y mantenida automáticamente.</footer>
+  </div>
+</body>
+</html>

@@ -5,14 +5,24 @@
 	import TopBar from "$lib/components/ui/TopBar.svelte";
 	import RankingTables from "$lib/components/datos/RankingTables.svelte";
 	import RecordsChart from "$lib/components/datos/RecordsChart.svelte";
+	import { vigentesPorAnio } from "$lib/data/records.js";
 	import { max, min, rollup, sum } from "d3-array";
+
+	/** Vistas de la gráfica. "vigentes" no cuenta récords batidos sino estaciones
+	 *  cuyo récord sigue en pie, agrupadas por el año en que lo fijaron. */
+	const VISTAS = [
+		{ id: "anual", label: "Año a año" },
+		{ id: "mensual", label: "Mes a mes" },
+		{ id: "vigentes", label: "Vigentes" },
+	];
 
 	// --- estado ---------------------------------------------------------
 	let stats = $state(null);
 	let stations = $state(null); // se carga bajo demanda
 	let loadError = $state(null);
 	let grupo = $state("total");
-	/** 'anual' = un año por barra · 'mensual' = 12 meses de un año */
+	/** 'anual' = un año por barra · 'mensual' = 12 meses de un año ·
+	 *  'vigentes' = estaciones por año del récord que sigue en pie */
 	let vista = $state("anual");
 	let anio = $state(null);
 	// Estación seleccionada dentro de una provincia: en vez de navegar a su
@@ -32,9 +42,10 @@
 		if (stats && anio == null) anio = stats.anioMax;
 	});
 
-	// Lazy-load del catálogo de estaciones solo cuando se elige una provincia.
+	// Lazy-load del catálogo de estaciones: al elegir una provincia y en la vista
+	// "vigentes", que se calcula entera en cliente a partir de stations.json.
 	$effect(() => {
-		if (grupo !== "total" && stations == null) {
+		if ((grupo !== "total" || vista === "vigentes") && stations == null) {
 			fetchStations()
 				.then((s) => (stations = s))
 				.catch((e) => console.warn("No se pudo cargar stations.json", e));
@@ -192,24 +203,40 @@
 	}
 
 	// --- derivaciones reactivas -----------------------------------------
+	const esVigentes = $derived(vista === "vigentes");
 	// Estamos en "modo estación" cuando hay una elegida y su detalle ya cargó.
+	// No aplica a la vista "vigentes": una sola estación daría una única barra.
 	const modoEstacion = $derived(
-		!!(estacionSel && stationDetail && stationDetail.indicativo === estacionSel),
-	);
-	// Mientras una estación está seleccionada pero su detalle aún no llegó, no
-	// mostramos el agregado de provincia (evita un parpadeo de datos ajenos).
-	const data = $derived(
-		estacionSel
-			? modoEstacion
-				? rowsForStation(stationDetail)
-				: []
-			: stats
-				? decorate(rowsFor(stats))
-				: [],
+		!esVigentes && !!(estacionSel && stationDetail && stationDetail.indicativo === estacionSel),
 	);
 	const grupoNombre = $derived(nombreGrupo(stats));
 	const grupoActual = $derived(grupoMeta(stats));
 	const groupStations = $derived(stationsOfGroup(stations, grupoActual));
+	/** Estaciones del ámbito elegido (toda la red o una provincia). */
+	const stationsAmbito = $derived(!stations ? [] : grupo === "total" ? stations : groupStations);
+	/** Vista "vigentes": se calcula en cliente desde stations.json, porque
+	 *  stats.json cuenta récords batidos (incluidos los ya superados) y aquí
+	 *  interesan solo los que siguen en pie. */
+	const vigentesRows = $derived(
+		esVigentes && stations
+			? vigentesPorAnio(stationsAmbito, { anioMax: stats?.anioMax ?? null })
+			: [],
+	);
+	// Mientras una estación está seleccionada pero su detalle aún no llegó, no
+	// mostramos el agregado de provincia (evita un parpadeo de datos ajenos).
+	const data = $derived(
+		esVigentes
+			? vigentesRows
+			: estacionSel
+				? modoEstacion
+					? rowsForStation(stationDetail)
+					: []
+				: stats
+					? decorate(rowsFor(stats))
+					: [],
+	);
+	/** Última barra de la serie de vigentes = el año más reciente del dataset. */
+	const filaUltima = $derived(esVigentes && data.length > 0 ? data[data.length - 1] : null);
 	// Nombre del ámbito mostrado (provincia/total o estación) y años disponibles
 	// para el selector "mes a mes" (los de la estación cuando hay una elegida).
 	const ambitoNombre = $derived(modoEstacion ? stationDetail.nombre : grupoNombre);
@@ -242,10 +269,18 @@
 		<header class="hero">
 			<p class="eyebrow">Red AEMET · histórico completo</p>
 			<h1>Récords por año y mes</h1>
-			<p class="lead">
-				Agregado histórico de récords batidos en la red AEMET, con el porcentaje de estaciones que
-				vivieron al menos un récord en cada periodo. Máxima y mínima se muestran por separado.
-			</p>
+			{#if esVigentes}
+				<p class="lead">
+					De los récords que hoy <strong>siguen en pie</strong>
+					en la red, en qué año se fijaron. Cada estación cuenta una vez por familia, en el año de su
+					récord vigente más reciente. Es la misma cuenta que el filtro de año del mapa.
+				</p>
+			{:else}
+				<p class="lead">
+					Agregado histórico de récords batidos en la red AEMET, con el porcentaje de estaciones que
+					vivieron al menos un récord en cada periodo. Máxima y mínima se muestran por separado.
+				</p>
+			{/if}
 		</header>
 
 		{#if loadError}
@@ -266,14 +301,17 @@
 
 				<div class="control toggle" role="group" aria-label="Vista">
 					<span class="ctl-label">Vista</span>
-					<div class="seg" style:--seg-index={vista === "anual" ? 0 : 1}>
+					<div
+						class="seg"
+						style:--seg-n={VISTAS.length}
+						style:--seg-index={VISTAS.findIndex((v) => v.id === vista)}
+					>
 						<span class="seg-pill" aria-hidden="true"></span>
-						<button class:active={vista === "anual"} onclick={() => (vista = "anual")}>
-							Año a año
-						</button>
-						<button class:active={vista === "mensual"} onclick={() => (vista = "mensual")}>
-							Mes a mes
-						</button>
+						{#each VISTAS as v (v.id)}
+							<button class:active={vista === v.id} onclick={() => (vista = v.id)}>
+								{v.label}
+							</button>
+						{/each}
 					</div>
 				</div>
 
@@ -291,7 +329,7 @@
 				<!-- Selector de estación SOLO si hay provincia elegida. Al elegir
 				     una, la gráfica pasa a mostrar el acumulado de ESA estación;
 				     dejándolo en blanco se vuelve al agregado de la provincia. -->
-				{#if grupo !== "total" && groupStations.length > 0}
+				{#if !esVigentes && grupo !== "total" && groupStations.length > 0}
 					<label class="control">
 						<span class="ctl-label">Estación</span>
 						<select bind:value={estacionSel}>
@@ -305,7 +343,21 @@
 			</div>
 
 			<!-- Resumen -->
-			{#if estacionSel && !modoEstacion}
+			{#if esVigentes}
+				{#if !stations}
+					<p class="summary muted">Cargando estaciones…</p>
+				{:else if filaUltima}
+					<p class="summary">
+						<strong>{grupoNombre}</strong>
+						·
+						{stationsAmbito.length.toLocaleString("es-ES")} estaciones →
+						<strong>{filaUltima.recordsMax.toLocaleString("es-ES")}</strong>
+						tienen su récord de máxima vigente fechado en {filaUltima.label} ·
+						<strong>{filaUltima.recordsMin.toLocaleString("es-ES")}</strong>
+						el de mínima
+					</p>
+				{/if}
+			{:else if estacionSel && !modoEstacion}
 				<p class="summary muted">Cargando récords de la estación…</p>
 			{:else if data.length > 0}
 				<p class="summary">
@@ -430,13 +482,14 @@
 		background: var(--surface);
 	}
 	/* Pill deslizante: ocupa el ancho de un botón y se desplaza a la opción
-	   activa según --seg-index (translateX del 100% de su ancho + el gap). */
+	   activa según --seg-index (translateX del 100% de su ancho + el gap). El
+	   ancho se reparte entre --seg-n opciones, descontando padding y gaps. */
 	.seg-pill {
 		position: absolute;
 		top: 3px;
 		bottom: 3px;
 		left: 3px;
-		width: calc(50% - 4px);
+		width: calc((100% - 6px - (var(--seg-n, 2) - 1) * 2px) / var(--seg-n, 2));
 		border-radius: 999px;
 		background: var(--ink);
 		box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);

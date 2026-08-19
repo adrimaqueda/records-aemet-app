@@ -10,7 +10,9 @@ el tramo visible. El eje Y vive en una canaleta fija (AX) que no se desplaza.
 
 Props:
   · data          — filas `{ label, labelLong, recordsMax, recordsMin, ... }`.
-  · vista         — 'anual' | 'mensual' (en mensual se etiquetan los 12 meses).
+  · vista         — 'anual' | 'mensual' | 'vigentes'. En mensual se etiquetan los
+                    12 meses; en vigentes la unidad de las barras no son récords
+                    batidos sino ESTACIONES cuyo récord actual es de ese año.
   · modoEstacion  — true cuando la gráfica muestra una sola estación (cambia la
                     nota y oculta el % de estaciones del tooltip).
 -->
@@ -105,6 +107,12 @@ Props:
 		return `${p.toFixed(p < 10 ? 1 : 0)}%`;
 	}
 
+	// En la vista "vigentes" cada barra cuenta estaciones (las que tienen ahí su
+	// récord aún en pie), no récords batidos: cambian título, unidad y nota.
+	const esVigentes = $derived(vista === "vigentes");
+	const unidad = $derived(esVigentes ? "estaciones" : "récords");
+	const titulo = $derived(esVigentes ? "Récords vigentes por año" : "Récords batidos por periodo");
+
 	// --- derivaciones reactivas -----------------------------------------
 	// Ancho del área de barras: el visible, o el mínimo para que cada barra
 	// tenga minBand px (en cuyo caso aparece scroll horizontal + minimapa).
@@ -196,14 +204,22 @@ Props:
 		<p class="tooltip">
 			<strong>{d.labelLong}</strong>
 			<span class="tip-sep">·</span>
-			<span class="tip-max">Máx: {d.recordsMax.toLocaleString("es-ES")} récords</span>
-			{#if d.estacionesConDatos > 0}
+			<span class="tip-max">Máx: {d.recordsMax.toLocaleString("es-ES")} {unidad}</span>
+			{#if esVigentes}
+				{#if d.estacionesConDatos > 0}
+					({fmtPct(d.pctMax)} de {d.estacionesConDatos.toLocaleString("es-ES")})
+				{/if}
+			{:else if d.estacionesConDatos > 0}
 				({d.estacionesBatieronMax}/{d.estacionesConDatos}
 				estaciones · {fmtPct(d.pctMax)})
 			{/if}
 			<span class="tip-sep">·</span>
-			<span class="tip-min">Mín: {d.recordsMin.toLocaleString("es-ES")} récords</span>
-			{#if d.estacionesConDatos > 0}
+			<span class="tip-min">Mín: {d.recordsMin.toLocaleString("es-ES")} {unidad}</span>
+			{#if esVigentes}
+				{#if d.estacionesConDatos > 0}
+					({fmtPct(d.pctMin)} de {d.estacionesConDatos.toLocaleString("es-ES")})
+				{/if}
+			{:else if d.estacionesConDatos > 0}
 				({d.estacionesBatieronMin}/{d.estacionesConDatos}
 				estaciones · {fmtPct(d.pctMin)})
 			{/if}
@@ -217,7 +233,7 @@ Props:
      compartiendo escala para comparar al vuelo. -->
 <section class="chart">
 	<div class="chart-head">
-		<h3>Récords batidos por periodo</h3>
+		<h3>{titulo}</h3>
 		<div class="chart-legend">
 			<span class="lg">
 				<span class="sw" style:background={COLOR_MAX}></span>
@@ -270,7 +286,7 @@ Props:
 				viewBox="0 0 {contentPlotW} {HEIGHT}"
 				preserveAspectRatio="none"
 				role="img"
-				aria-label="Récords batidos por periodo: máxima hacia arriba, mínima hacia abajo"
+				aria-label="{titulo}: máxima hacia arriba, mínima hacia abajo"
 			>
 				{#if geom}
 					<!-- Rejilla: ticks simétricos arriba/abajo; línea cero al centro. -->
@@ -387,7 +403,11 @@ Props:
 
 <p class="legend small muted">
 	Máxima y mínima comparten escala (máxima hacia arriba, mínima hacia abajo) para comparar al vuelo.
-	{#if modoEstacion}
+	{#if esVigentes}
+		Cada barra es el número de estaciones cuyo récord <strong>aún en pie</strong>
+		se fijó ese año: no son los récords batidos entonces, sino los que han sobrevivido hasta hoy. Cada
+		estación cuenta una vez por familia, en el año de su récord vigente más reciente.
+	{:else if modoEstacion}
 		Cada barra es el número de récords (absolutos y mensuales) que batió esta estación en ese
 		periodo.
 	{:else}

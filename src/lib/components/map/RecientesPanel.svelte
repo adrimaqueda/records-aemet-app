@@ -1,12 +1,15 @@
 <!--
 @component
-RecientesPanel.svelte — listado de estaciones con récord en los últimos 15 días.
+RecientesPanel.svelte — listado de estaciones con récord destacado.
 
 Caja flotante (esquina inferior izquierda del mapa) con paginación de 10 en 10
-y un botón en la cabecera para colapsar/expandir el listado.
+y un botón en la cabecera para colapsar/expandir el listado. Por defecto lista
+los récords de los últimos 15 días; con el filtro de año activo la página le
+pasa las estaciones de ese año y cambia el título.
 
 Props:
   recientes: array de { s, ult, n } generado en la página.
+  titulo:    cabecera del panel ("Récords recientes" por defecto).
   onSelect:  (station) => void  — al hacer click en una fila.
 -->
 <script>
@@ -15,7 +18,7 @@ Props:
 	import { fmtTemp } from "$lib/utils/format.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
-	let { recientes = [], onSelect = null, selected } = $props();
+	let { recientes = [], titulo = "Récords recientes", onSelect = null, selected } = $props();
 
 	let offset = $state(0);
 	// En móvil arrancamos colapsado; en desktop, expandido.
@@ -47,7 +50,7 @@ Props:
 		>
 			<h2>
 				<span class="title">
-					Récords recientes
+					{titulo}
 					<span class="count">{recientes.length}</span>
 				</span>
 				<span class="toggle">

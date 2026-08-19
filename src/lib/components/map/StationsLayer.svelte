@@ -22,10 +22,14 @@ Propiedades esperadas en cada feature:
   - provisional (boolean)    → récord reconstruido del horario, aún sin dato
                                definitivo: borde blanco y número con "~".
   - dayNumber (string)       → "12" o "" si >30 días
+  - uniforme (boolean)       → filtro por año activo: todas las estaciones
+                               mostradas son del mismo año, así que la escala de
+                               antigüedad se apaga y se pintan todas igual
+                               (tamaño fijo, color vivo, sin halo ni número).
 -->
 <script>
 	import { getContext, onDestroy } from "svelte";
-	import { buildMapboxColorExpr, STOPS_MAX, STOPS_MIN } from "$lib/utils/colors.js";
+	import { buildMapboxColorExpr, colorForDays, STOPS_MAX, STOPS_MIN } from "$lib/utils/colors.js";
 
 	let { data, onClick = null } = $props();
 
@@ -41,11 +45,30 @@ Propiedades esperadas en cada feature:
 	// Color: vibrante para frescos, casi gris para antiguos. Las tablas STOPS_*
 	// están compartidas con colors.js para que el JS (border del panel) pueda
 	// reproducir exactamente el mismo color.
-	const circleColor = [
+	const colorPorEdad = [
 		"case",
 		["get", "esMax"],
 		buildMapboxColorExpr(STOPS_MAX),
 		buildMapboxColorExpr(STOPS_MIN),
+	];
+
+	// ── Modo uniforme (filtro por año) ────────────────────────────────────
+	// Con un año seleccionado la antigüedad deja de ser la variable: todas las
+	// estaciones mostradas fijaron su récord vigente en ese mismo año. Si
+	// siguiéramos codificando los días, los años pasados saldrían como puntos
+	// grises de 1,5 px y el mapa parecería vacío. Así que en ese modo se pintan
+	// todas igual: tamaño medio constante y el color vivo de la familia. Se
+	// decide por feature (`uniforme`), no por capa, para que baste con
+	// actualizar la fuente GeoJSON.
+	const esUniforme = ["==", ["get", "uniforme"], true];
+	const COLOR_UNIFORME_MAX = colorForDays(true, 0);
+	const COLOR_UNIFORME_MIN = colorForDays(false, 0);
+
+	const circleColor = [
+		"case",
+		esUniforme,
+		["case", ["get", "esMax"], COLOR_UNIFORME_MAX, COLOR_UNIFORME_MIN],
+		colorPorEdad,
 	];
 
 	// ── Radios ────────────────────────────────────────────────────────────
@@ -79,7 +102,12 @@ Propiedades esperadas en cada feature:
 
 	// Construye una expresión de radio MapLibre desde BASE_RADIUS, aplicando la
 	// transformación `fn(radioBase, días)` a cada valor (offset, escala, recorte…).
-	function buildRadius(fn = (r) => r) {
+	//
+	// `uniform` (opcional) es el par [radioAlejado, radioConZoom] que se usa en
+	// modo uniforme. El `case` va DENTRO de la interpolación de zoom, no fuera:
+	// MapLibre solo admite una expresión basada en zoom por propiedad, y anidarla
+	// dentro de un `case` la rechaza.
+	function buildRadius(fn = (r) => r, uniform = null) {
 		const perDays = (col) => {
 			const expr = ["interpolate", ["linear"], ["get", "daysSinceRecord"]];
 			for (const [days, far, near] of BASE_RADIUS) {
@@ -87,44 +115,58 @@ Propiedades esperadas en cada feature:
 			}
 			return expr;
 		};
-		return ["interpolate", ["linear"], ["zoom"], ZOOM_FAR, perDays(1), ZOOM_NEAR, perDays(2)];
+		const porZoom = (col) =>
+			uniform == null ? perDays(col) : ["case", esUniforme, uniform[col - 1], perDays(col)];
+		return ["interpolate", ["linear"], ["zoom"], ZOOM_FAR, porZoom(1), ZOOM_NEAR, porZoom(2)];
 	}
 
-	// Círculo principal: la base tal cual.
-	const circleRadius = buildRadius();
+	// Círculo principal: la base tal cual. En modo uniforme, un tamaño intermedio
+	// constante: se ve de sobra en la vista de país sin empastarse cuando el año
+	// filtrado reúne varios cientos de estaciones.
+	const circleRadius = buildRadius(undefined, [5, 10]);
 
 	// Stroke desaparece para los viejos.
 	const circleStrokeWidth = [
-		"interpolate",
-		["linear"],
-		["get", "daysSinceRecord"],
-		0,
-		1.5,
-		30,
-		1.2,
-		90,
-		0.7,
-		365,
-		0.3,
-		1825,
-		0,
+		"case",
+		esUniforme,
+		1,
+		[
+			"interpolate",
+			["linear"],
+			["get", "daysSinceRecord"],
+			0,
+			1.5,
+			30,
+			1.2,
+			90,
+			0.7,
+			365,
+			0.3,
+			1825,
+			0,
+		],
 	];
 
 	// Opacidad: los viejos también bajan en presencia.
 	const circleOpacity = [
-		"interpolate",
-		["linear"],
-		["get", "daysSinceRecord"],
-		0,
-		0.95,
-		30,
-		0.9,
-		365,
-		0.65,
-		1825,
-		0.45,
-		10950,
-		0.35,
+		"case",
+		esUniforme,
+		0.92,
+		[
+			"interpolate",
+			["linear"],
+			["get", "daysSinceRecord"],
+			0,
+			0.95,
+			30,
+			0.9,
+			365,
+			0.65,
+			1825,
+			0.45,
+			10950,
+			0.35,
+		],
 	];
 
 	// Halo: el glow difuso bajo los récords del último mes. Es HALO_SCALE× el
@@ -146,20 +188,13 @@ Propiedades esperadas en cada feature:
 
 	// Anillo de récord absoluto: el mismo círculo, RING_GAP px por fuera. Su
 	// presencia se controla aparte con ringOpacity (se desvanece en años).
-	const ringRadius = buildRadius((r) => Math.max(r * RING_GAP, r + 3));
+	const ringRadius = buildRadius((r) => Math.max(r * RING_GAP, r + 3), [8, 16]);
 
 	const ringOpacity = [
-		"interpolate",
-		["linear"],
-		["get", "daysSinceRecord"],
-		0,
-		0.7,
-		30,
-		0.5,
-		365,
-		0.25,
-		1825,
-		0,
+		"case",
+		esUniforme,
+		0.8,
+		["interpolate", ["linear"], ["get", "daysSinceRecord"], 0, 0.7, 30, 0.5, 365, 0.25, 1825, 0],
 	];
 
 	function add() {
@@ -175,7 +210,7 @@ Propiedades esperadas en cada feature:
 			id: HALO,
 			type: "circle",
 			source: SRC,
-			filter: ["<", ["get", "daysSinceRecord"], 30],
+			filter: ["all", ["!", esUniforme], ["<", ["get", "daysSinceRecord"], 30]],
 			paint: {
 				"circle-radius": haloRadius,
 				"circle-color": circleColor,
@@ -196,15 +231,10 @@ Propiedades esperadas en cada feature:
 				"circle-opacity": ringOpacity,
 				"circle-stroke-color": "#1a1a1a",
 				"circle-stroke-width": [
-					"interpolate",
-					["linear"],
-					["get", "daysSinceRecord"],
-					0,
-					1.4,
-					365,
-					0.8,
-					1825,
-					0,
+					"case",
+					esUniforme,
+					1.2,
+					["interpolate", ["linear"], ["get", "daysSinceRecord"], 0, 1.4, 365, 0.8, 1825, 0],
 				],
 			},
 		});
@@ -228,7 +258,7 @@ Propiedades esperadas en cada feature:
 			id: LABEL,
 			type: "symbol",
 			source: SRC,
-			filter: ["<=", ["get", "daysSinceRecord"], 30],
+			filter: ["all", ["!", esUniforme], ["<=", ["get", "daysSinceRecord"], 30]],
 			layout: {
 				// Prefijo "~" para los récords provisionales (p. ej. "~3").
 				"text-field": ["concat", ["case", ["get", "provisional"], "~", ""], ["get", "dayNumber"]],
