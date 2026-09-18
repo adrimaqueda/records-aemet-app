@@ -187,6 +187,97 @@
 			);
 	});
 	const panelTitulo = $derived(anio == null ? "Récords recientes" : `Récords vigentes de ${anio}`);
+	/** Explica el badge ×N del panel: su significado depende del modo (récords
+	 *  recientes vs. filtro de año), así que el texto se decide aquí. */
+	const panelBadgeLabel = $derived(
+		anio == null
+			? (n) => `${n} récords batidos en los últimos 15 días`
+			: (n) => `La estación fijó su récord absoluto y su récord mensual en ${anio}`,
+	);
+
+	/** Margen "seguro" en px alrededor del mapa, dentro del cual un punto se
+	 *  considera realmente visible (no tapado por HUD / panel de récords).
+	 *  En escritorio la HUD (arriba-izq) y el panel de récords (abajo-izq)
+	 *  ocupan una columna fija junto al borde izquierdo → el margen izquierdo
+	 *  es mucho más ancho que el resto. En móvil ambos paneles ocupan el
+	 *  ancho completo, así que lo que pesa es el margen superior/inferior. */
+	function safeMargin() {
+		return isMobile.current
+			? { top: 260, right: 20, bottom: 110, left: 20 }
+			: { top: 20, right: 90, bottom: 20, left: 370 };
+	}
+
+	/** Clampea el padding para que nunca llegue a igualar/superar las
+	 *  dimensiones del contenedor: MapLibre lanza si left+right >= width (o
+	 *  top+bottom >= height) en `fitBounds`. */
+	function clampPadding(margin, width, height) {
+		const maxH = Math.max(0, width / 2 - 1);
+		const maxV = Math.max(0, height / 2 - 1);
+		return {
+			top: Math.min(margin.top, maxV),
+			bottom: Math.min(margin.bottom, maxV),
+			left: Math.min(margin.left, maxH),
+			right: Math.min(margin.right, maxH),
+		};
+	}
+
+	// Si el año filtrado deja todas las estaciones fuera de lo que se ve de
+	// verdad (tapadas por la HUD/panel o directamente fuera del viewport),
+	// el mapa parece vacío aunque el filtro funcione. Encuadramos sobre los
+	// resultados en vez de dejar al usuario con un mapa en blanco.
+	//
+	// Solo se dispara cuando NINGÚN resultado es visible: con un año que deja
+	// unas pocas estaciones fuera de encuadre pero otras a la vista, no
+	// tocamos la cámara (no queremos pelearnos con quien está paneando).
+	$effect(() => {
+		if (anio == null || !mapRef || visibles.length === 0) return;
+
+		const pts = visibles
+			.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
+			.map((s) => [s.lon, s.lat]);
+		if (pts.length === 0) return;
+
+		const rect = mapRef.getContainer().getBoundingClientRect();
+		if (rect.width === 0 || rect.height === 0) return;
+
+		const margin = safeMargin();
+		const anyVisible = pts.some(([lon, lat]) => {
+			const p = mapRef.project([lon, lat]);
+			return (
+				p.x >= margin.left &&
+				p.x <= rect.width - margin.right &&
+				p.y >= margin.top &&
+				p.y <= rect.height - margin.bottom
+			);
+		});
+		if (anyVisible) return;
+
+		let minLon = Infinity;
+		let maxLon = -Infinity;
+		let minLat = Infinity;
+		let maxLat = -Infinity;
+		for (const [lon, lat] of pts) {
+			if (lon < minLon) minLon = lon;
+			if (lon > maxLon) maxLon = lon;
+			if (lat < minLat) minLat = lat;
+			if (lat > maxLat) maxLat = lat;
+		}
+
+		mapRef.fitBounds(
+			[
+				[minLon, minLat],
+				[maxLon, maxLat],
+			],
+			{
+				padding: clampPadding(margin, rect.width, rect.height),
+				// Un año con una única estación (p.ej. Canarias) debe encuadrar la
+				// isla/región, no lanzarse a zoom de calle sobre el punto.
+				maxZoom: 8,
+				duration: 600,
+				essential: true,
+			},
+		);
+	});
 
 	function focusStation(s) {
 		// Recupera la estación completa (de stations[]) si nos pasan solo {indicativo,…}
@@ -398,7 +489,13 @@
 		{/if}
 	</header>
 
-	<RecientesPanel recientes={panelItems} titulo={panelTitulo} onSelect={focusStation} {selected} />
+	<RecientesPanel
+		recientes={panelItems}
+		titulo={panelTitulo}
+		onSelect={focusStation}
+		{selected}
+		badgeLabel={panelBadgeLabel}
+	/>
 
 	<StationPanel
 		indicativo={selected?.indicativo ?? null}

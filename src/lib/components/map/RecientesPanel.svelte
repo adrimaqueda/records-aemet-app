@@ -8,9 +8,12 @@ los récords de los últimos 15 días; con el filtro de año activo la página l
 pasa las estaciones de ese año y cambia el título.
 
 Props:
-  recientes: array de { s, ult, n } generado en la página.
-  titulo:    cabecera del panel ("Récords recientes" por defecto).
-  onSelect:  (station) => void  — al hacer click en una fila.
+  recientes:  array de { s, ult, n } generado en la página.
+  titulo:     cabecera del panel ("Récords recientes" por defecto).
+  onSelect:   (station) => void  — al hacer click en una fila.
+  badgeLabel: (n) => string — texto que explica el badge ×N (el significado de
+              n cambia según el modo del panel: por defecto son los récords
+              batidos en los últimos 15 días).
 -->
 <script>
 	import { slide } from "svelte/transition";
@@ -18,7 +21,13 @@ Props:
 	import { fmtTemp } from "$lib/utils/format.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
-	let { recientes = [], titulo = "Récords recientes", onSelect = null, selected } = $props();
+	let {
+		recientes = [],
+		titulo = "Récords recientes",
+		onSelect = null,
+		selected,
+		badgeLabel = (n) => `${n} récords batidos en los últimos 15 días`,
+	} = $props();
 
 	let offset = $state(0);
 	// En móvil arrancamos colapsado; en desktop, expandido.
@@ -67,7 +76,12 @@ Props:
 							<button class="link" onclick={() => focus(s)}>
 								<span class="rec-name">
 									{s.nombre}
-									{#if n > 1}<span class="badge">×{n}</span>{/if}
+									{#if n > 1}
+										<span class="badge" title={badgeLabel(n)}>
+											<span aria-hidden="true">×{n}</span>
+											<span class="sr-only">{badgeLabel(n)}</span>
+										</span>
+									{/if}
 								</span>
 								<span class="rec-meta">
 									{fmtTemp(ult.valor)} ·
@@ -276,5 +290,17 @@ Props:
 
 	* :global .prov {
 		margin-left: 5px;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>
