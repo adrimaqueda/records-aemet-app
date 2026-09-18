@@ -350,7 +350,7 @@
 					<p class="summary">
 						<strong>{grupoNombre}</strong>
 						·
-						{stationsAmbito.length.toLocaleString("es-ES")} estaciones →
+						De las {stationsAmbito.length.toLocaleString("es-ES")} estaciones del mapa →
 						<strong>{filaUltima.recordsMax.toLocaleString("es-ES")}</strong>
 						tienen su récord de máxima vigente fechado en {filaUltima.label} ·
 						<strong>{filaUltima.recordsMin.toLocaleString("es-ES")}</strong>

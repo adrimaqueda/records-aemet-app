@@ -103,6 +103,17 @@ Props:
 		return g.cy + g.yMag(v);
 	}
 
+	// Altura mínima visible (px) para una barra no nula, sólo en "vigentes": la
+	// cola larga de récords aún en pie con pocas estaciones (p. ej. 1/557 a
+	// escala nacional) se quedaría en una fracción de píxel invisible sin este
+	// suelo. Un valor real de 0 sigue sin dibujar nada.
+	const MIN_BAR_PX = 2;
+	function barHeight(g, v, floor) {
+		if (v === 0) return 0;
+		const h = g.yMag(v);
+		return floor ? Math.max(MIN_BAR_PX, h) : h;
+	}
+
 	function fmtPct(p) {
 		return `${p.toFixed(p < 10 ? 1 : 0)}%`;
 	}
@@ -207,7 +218,7 @@ Props:
 			<span class="tip-max">Máx: {d.recordsMax.toLocaleString("es-ES")} {unidad}</span>
 			{#if esVigentes}
 				{#if d.estacionesConDatos > 0}
-					({fmtPct(d.pctMax)} de {d.estacionesConDatos.toLocaleString("es-ES")})
+					({fmtPct(d.pctMax)} de {d.estacionesConDatos.toLocaleString("es-ES")} del mapa)
 				{/if}
 			{:else if d.estacionesConDatos > 0}
 				({d.estacionesBatieronMax}/{d.estacionesConDatos}
@@ -217,7 +228,7 @@ Props:
 			<span class="tip-min">Mín: {d.recordsMin.toLocaleString("es-ES")} {unidad}</span>
 			{#if esVigentes}
 				{#if d.estacionesConDatos > 0}
-					({fmtPct(d.pctMin)} de {d.estacionesConDatos.toLocaleString("es-ES")})
+					({fmtPct(d.pctMin)} de {d.estacionesConDatos.toLocaleString("es-ES")} del mapa)
 				{/if}
 			{:else if d.estacionesConDatos > 0}
 				({d.estacionesBatieronMin}/{d.estacionesConDatos}
@@ -301,8 +312,8 @@ Props:
 					<!-- Barras divergentes + zona de hover por periodo. -->
 					{#each data as d, i (d.label)}
 						{@const x = geom.x(d.label)}
-						{@const yTopMax = yUp(geom, d.recordsMax)}
-						{@const yBotMin = yDown(geom, d.recordsMin)}
+						{@const hMax = barHeight(geom, d.recordsMax, esVigentes)}
+						{@const hMin = barHeight(geom, d.recordsMin, esVigentes)}
 						<g
 							onmouseenter={() => (hoverIdx = i)}
 							onmouseleave={() => (hoverIdx = -1)}
@@ -311,9 +322,9 @@ Props:
 							<rect {x} y={MARGIN.top} width={geom.barW} height={geom.h} fill="transparent" />
 							<rect
 								{x}
-								y={yTopMax}
+								y={geom.cy - hMax}
 								width={geom.barW}
-								height={Math.max(0, geom.cy - yTopMax)}
+								height={hMax}
 								fill={COLOR_MAX}
 								opacity={hoverIdx === i ? 1 : 0.85}
 							/>
@@ -321,7 +332,7 @@ Props:
 								{x}
 								y={geom.cy}
 								width={geom.barW}
-								height={Math.max(0, yBotMin - geom.cy)}
+								height={hMin}
 								fill={COLOR_MIN}
 								opacity={hoverIdx === i ? 1 : 0.85}
 							/>
@@ -373,11 +384,13 @@ Props:
 				<line x1={0} x2={scrollVW} y1={miniG.cy} y2={miniG.cy} stroke="#e2e2e2" />
 				{#each data as d (d.label)}
 					{@const mx = miniG.x(d.label)}
+					{@const mhMax = barHeight(miniG, d.recordsMax, esVigentes)}
+					{@const mhMin = barHeight(miniG, d.recordsMin, esVigentes)}
 					<rect
 						x={mx}
-						y={miniG.cy - miniG.yMag(d.recordsMax)}
+						y={miniG.cy - mhMax}
 						width={miniG.barW}
-						height={miniG.yMag(d.recordsMax)}
+						height={mhMax}
 						fill={COLOR_MAX}
 						opacity="0.5"
 					/>
@@ -385,7 +398,7 @@ Props:
 						x={mx}
 						y={miniG.cy}
 						width={miniG.barW}
-						height={miniG.yMag(d.recordsMin)}
+						height={mhMin}
 						fill={COLOR_MIN}
 						opacity="0.5"
 					/>
