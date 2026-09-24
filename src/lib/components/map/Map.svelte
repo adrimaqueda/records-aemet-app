@@ -1,24 +1,18 @@
 <!--
 @component
-Map.svelte — Mapa interactivo con MapLibre GL JS.
+Map.svelte — mapa MapLibre GL JS con tiles vectoriales de OpenFreeMap. Ocupa
+todo su contenedor.
 
-Renderiza un mapa panable y zoomable con tiles vectoriales de OpenFreeMap.
-Expone un contexto Svelte para que los <MapLayer> hijos registren sus
-fuentes y capas sobre la misma instancia de mapa.
+Expone un contexto ("maplibre-map") para que los hijos (<StationsLayer>,
+<MapControls>) trabajen sobre la misma instancia; los hijos se montan cuando
+el primer estilo ha cargado.
 
-Tema inicial con la prop `theme` (ids en mapThemes.js: claro, atardecer,
-noche, chicle). Por defecto "claro". A partir de ahí lo cambia el usuario
-desde MapControls.
+Tema inicial con la prop `theme` (ids en mapThemes.js). A partir de ahí lo
+cambia el usuario desde MapControls.
 
 Uso:
-<Map longitude={-3.7} latitude={40.2} zoom={5.2} theme="claro">
-  <MapLayer
-    id="stations"
-    type="circle"
-    data={geojson}
-    paint={{ 'circle-radius': 5, 'circle-color': ['get', 'color'] }}
-    onClick={(feature) => (selected = feature.properties.indicativo)}
-  />
+<Map longitude={-3.7} latitude={40.2} zoom={5.2} onReady={(m) => (mapRef = m)}>
+  <StationsLayer data={geojson} onClick={…} />
 </Map>
 -->
 <script>
@@ -42,12 +36,6 @@ Uso:
 		// apagar en minimapas decorativos, donde no cabe; en ese caso la
 		// atribución debe aparecer en algún otro sitio de la página.
 		attribution = true,
-		fill = false, // si true, ocupa todo el contenedor (sin aspect-ratio)
-		width = null,
-		height = null,
-		aspectRatio = "4 / 3",
-		caption = "",
-		credit = "© OpenFreeMap · © OpenStreetMap contributors",
 		onReady = null,
 		children,
 	} = $props();
@@ -56,28 +44,22 @@ Uso:
 
 	let map = $state(null);
 	let mapReady = $state(false);
-	let appliedStyleUrl = $state(null);
+	// Estilo que tiene cargado la instancia (no reactivo: solo lo lee el effect).
+	let appliedStyleUrl = null;
 
 	// Tema activo. Se inicializa con la prop `theme` y a partir de ahí lo
 	// controla el selector de MapControls vía `setTheme` (contexto).
-	let currentTheme = $state(theme);
+	let currentTheme = $state(untrack(() => theme));
 	const styleUrl = $derived(THEME_URLS[currentTheme] ?? THEME_URLS[DEFAULT_THEME]);
 
-	const ariaLabel = $derived(
-		caption
-			? `Mapa interactivo: ${caption}`
-			: `Mapa interactivo centrado en ${latitude.toFixed(2)}, ${longitude.toFixed(2)}`,
-	);
-
-	// Contexto que consumen los <MapLayer> / <StationsLayer> hijos.
 	setContext("maplibre-map", {
 		getMap: () => map,
-		isReady: () => mapReady,
 		onStyleLoad: (fn) => map?.on("style.load", fn),
 		offStyleLoad: (fn) => map?.off("style.load", fn),
-		// Selector de tema (lo consume MapControls).
 		themes: MAP_THEMES,
-		getTheme: () => currentTheme,
+		get theme() {
+			return currentTheme;
+		},
 		setTheme: (id) => {
 			if (THEME_URLS[id]) currentTheme = id;
 		},
@@ -116,7 +98,7 @@ Uso:
 					});
 					map = instance;
 					appliedStyleUrl = styleUrl;
-					if (onReady) onReady(instance);
+					onReady?.(instance);
 				})
 				.catch((err) => {
 					console.error("Map: failed to load maplibre-gl", err);
@@ -125,7 +107,7 @@ Uso:
 
 		return () => {
 			mounted = false;
-			if (instance) instance.remove();
+			instance?.remove();
 			map = null;
 			mapReady = false;
 		};
@@ -154,58 +136,20 @@ Uso:
 	});
 </script>
 
-<figure
-	class="map-figure"
-	class:fill
-	style:width={width ? `${width}px` : undefined}
-	style:height={fill ? undefined : height ? `${height}px` : undefined}
->
-	<div
-		class="map-container"
-		class:fill
-		{@attach mapAttachment}
-		role="application"
-		aria-label={ariaLabel}
-		style:aspect-ratio={!fill && !height ? aspectRatio : undefined}
-	></div>
-	{#if !fill && (caption || credit)}
-		<figcaption>
-			{#if caption}<span class="caption">{caption}</span>{/if}
-			{#if credit}<span class="credit">{credit}</span>{/if}
-		</figcaption>
-	{/if}
-</figure>
+<div
+	class="map"
+	{@attach mapAttachment}
+	role={interactive ? "application" : "img"}
+	aria-label={interactive ? "Mapa interactivo de estaciones" : "Mapa de situación"}
+></div>
 
 {#if mapReady && children}
 	{@render children()}
 {/if}
 
 <style>
-	.map-figure {
-		margin: 0;
-		padding: 0;
-		width: 100%;
-	}
-	.map-figure.fill {
+	.map {
 		width: 100%;
 		height: 100%;
-	}
-	.map-container {
-		width: 100%;
-		display: block;
-	}
-	.map-container.fill {
-		height: 100%;
-	}
-	figcaption {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		padding-top: 0.4rem;
-		font-size: 0.85rem;
-	}
-	.credit {
-		color: #888;
-		font-size: 0.75rem;
 	}
 </style>

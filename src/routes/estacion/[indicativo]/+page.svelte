@@ -2,6 +2,7 @@
 	import { page } from "$app/state";
 	import { fetchStationDetail } from "$lib/data/data.js";
 	import { latestInFamily } from "$lib/data/records.js";
+	import { stationMeta } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
 	import { daysSince } from "$lib/utils/age.js";
 	import TopBar from "$lib/components/ui/TopBar.svelte";
@@ -11,8 +12,7 @@
 	import RecordsMensuales from "$lib/components/station/RecordsMensuales.svelte";
 	import RecordsEvolution from "$lib/components/station/RecordsEvolution.svelte";
 
-	const indicativo = $derived(page.params.indicativo);
-	const detailPromise = $derived(indicativo ? fetchStationDetail(indicativo) : null);
+	const detailPromise = $derived(fetchStationDetail(page.params.indicativo));
 
 	/** Color de recencia del récord más reciente de la estación (cualquier
 	 *  familia): es el que pinta el anillo del minimapa, igual que el marcador
@@ -21,16 +21,13 @@
 		const max = latestInFamily(detail, "max");
 		const min = latestInFamily(detail, "min");
 		const best = !max ? min : !min ? max : max.fecha >= min.fecha ? max : min;
-		if (!best) return null;
-		return colorForDays(best === max, daysSince(best.fecha));
+		return best ? colorForDays(best === max, daysSince(best.fecha)) : null;
 	}
 </script>
 
 <svelte:head>
 	{#await detailPromise then detail}
-		<title>
-			{detail ? `${detail.nombre} · Récords de temperatura` : "Estación · Récords de temperatura"}
-		</title>
+		<title>{stationMeta(detail).title}</title>
 	{/await}
 </svelte:head>
 
@@ -43,22 +40,20 @@
 			<p>Cargando estación…</p>
 		</div>
 	{:then detail}
-		{#if detail}
-			<main>
-				<!-- Cabecera + minimapa: en escritorio el medallón va a la izquierda
-				     del titular; en móvil la banda se coloca debajo (column-reverse). -->
-				<div class="hero-block">
-					<StationMinimap {detail} color={ringColor(detail)} />
-					<StationHero {detail} />
-				</div>
-				<RecordsHeadline {detail} />
-				<RecordsMensuales {detail} />
-				<RecordsEvolution {detail} />
-				<!-- El minimapa apaga el control de atribución de MapLibre (no cabe
-				     en un medallón de 172 px), así que el crédito va aquí, una vez. -->
-				<p class="credit">Cartografía © OpenFreeMap · © OpenStreetMap contributors</p>
-			</main>
-		{/if}
+		<main>
+			<!-- Cabecera + minimapa: en escritorio el medallón va a la izquierda
+			     del titular; en móvil la banda se coloca debajo (column-reverse). -->
+			<div class="hero-block">
+				<StationMinimap {detail} color={ringColor(detail)} />
+				<StationHero {detail} />
+			</div>
+			<RecordsHeadline {detail} />
+			<RecordsMensuales {detail} />
+			<RecordsEvolution {detail} />
+			<!-- El minimapa apaga el control de atribución de MapLibre (no cabe
+			     en un medallón de 172 px), así que el crédito va aquí, una vez. -->
+			<p class="credit">Cartografía © OpenFreeMap · © OpenStreetMap contributors</p>
+		</main>
 	{:catch err}
 		<div class="state error">
 			<p>No se pudo cargar la estación.</p>
@@ -109,23 +104,5 @@
 	.state.error .detail {
 		color: var(--faint);
 		font-size: 0.85rem;
-	}
-	.spinner {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		border: 2.5px solid var(--line-strong);
-		border-top-color: var(--max);
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.spinner {
-			animation-duration: 2s;
-		}
 	}
 </style>

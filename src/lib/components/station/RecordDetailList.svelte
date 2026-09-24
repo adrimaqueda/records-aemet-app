@@ -8,14 +8,14 @@ real de la lista. Con un único récord se muestra entero, sin recorte ni botón
 Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 -->
 <script>
-	import { fmtDate, fmtNum, fmtTemp } from "$lib/utils/format.js";
+	import { fmtDate, fmtSubida, fmtTemp } from "$lib/utils/format.js";
 	import { ageDurationLabel, daysSince } from "$lib/utils/age.js";
 	import { colorForDays } from "$lib/utils/colors.js";
 	import { extent } from "d3-array";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
-	/** @type {{ events: any[], fam: "max" | "min", id: string }} */
-	let { events, fam, id } = $props();
+	/** @type {{ events: any[], fam: "max" | "min" }} */
+	let { events, fam } = $props();
 
 	let open = $state(false);
 	let fullH = $state(0);
@@ -23,26 +23,24 @@ Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 	/** Récords en orden DESC (más reciente primero), decorados con la barra de
 	 *  posición dentro del rango y el color por antigüedad. */
 	const list = $derived.by(() => {
-		if (events.length === 0) return [];
 		const [lo, hi] = extent(events, (e) => e.valor);
 		const range = hi - lo || 1;
+		const desc = [...events].sort((a, b) => b.fecha.localeCompare(a.fecha));
 		// El más antiguo es el "primer registro"; el resto de marcas iniciales
 		// (warm-up tras un hueco de datos) se etiquetan aparte.
-		const firstFecha = events.reduce((m, e) => (e.fecha < m ? e.fecha : m), events[0].fecha);
-		return [...events]
-			.sort((a, b) => b.fecha.localeCompare(a.fecha))
-			.map((e) => ({
-				...e,
-				esPrimero: e.fecha === firstFecha,
-				pct: 6 + ((e.valor - lo) / range) * 94,
-				barColor: colorForDays(fam === "max", daysSince(e.fecha)),
-			}));
+		const firstFecha = desc.at(-1).fecha;
+		return desc.map((e) => ({
+			...e,
+			esPrimero: e.fecha === firstFecha,
+			pct: 6 + ((e.valor - lo) / range) * 94,
+			barColor: colorForDays(fam === "max", daysSince(e.fecha)),
+		}));
 	});
 </script>
 
 <div class="lista" class:open class:single={list.length <= 1}>
 	<div class="lista-window" style:--full-h="{fullH}px">
-		<ul id="lista-{id}" bind:clientHeight={fullH}>
+		<ul id="lista-{fam}" bind:clientHeight={fullH}>
 			{#each list as p (p.fecha + p.tipo)}
 				<li>
 					<div class="li-top">
@@ -54,11 +52,9 @@ Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 					<div class="li-bar">
 						<div class="li-bar-fill" style:width="{p.pct}%" style:background={p.barColor}></div>
 					</div>
-					<div class="li-meta muted small">
+					<div class="li-meta">
 						{#if p.valorAnterior != null}
-							{p.valor > p.valorAnterior ? "+" : "−"}{fmtNum(Math.abs(p.valor - p.valorAnterior))}°C
-							sobre {fmtTemp(p.valorAnterior)} ·
-							{ageDurationLabel(p.diasDesdeAnterior)} después
+							{fmtSubida(p.valor, p.valorAnterior)} · {ageDurationLabel(p.diasDesdeAnterior)} después
 						{:else if p.esPrimero}
 							Primer registro
 						{:else}
@@ -74,7 +70,7 @@ Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 			type="button"
 			class="lista-toggle"
 			aria-expanded={open}
-			aria-controls="lista-{id}"
+			aria-controls="lista-{fam}"
 			onclick={() => (open = !open)}
 		>
 			<span class="lista-toggle-text">
@@ -195,9 +191,6 @@ Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
 	}
-	.li-date :global(.prov) {
-		margin-left: 5px;
-	}
 	.li-val {
 		font-weight: 700;
 		color: var(--ink);
@@ -215,13 +208,8 @@ Recibe los eventos en crudo y los decora (barra de posición + color por edad).
 		transition: width 0.18s ease;
 	}
 	.li-meta {
+		font-size: 0.78rem;
 		color: var(--faint);
 		font-variant-numeric: tabular-nums;
-	}
-	.small {
-		font-size: 0.78rem;
-	}
-	.muted {
-		color: var(--faint);
 	}
 </style>

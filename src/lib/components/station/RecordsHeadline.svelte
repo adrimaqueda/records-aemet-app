@@ -8,56 +8,40 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 	import { fmtDate, fmtNum, fmtTemp, tipoLabel } from "$lib/utils/format.js";
 	import { ageLongLabel, daysSince } from "$lib/utils/age.js";
 	import { colorForDays } from "$lib/utils/colors.js";
+	import { FAMILIA_SHORT, FAMILIA_TIPOS } from "$lib/data/data.js";
 	import { latestInFamily } from "$lib/data/records.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
 	let { detail } = $props();
 
+	const CARDS = [
+		{ fam: "max", label: "Día más caluroso", sub: "temperatura máxima registrada" },
+		{ fam: "min", label: "Noche más cálida", sub: "temperatura mínima más alta" },
+	];
+
 	const cards = $derived(
-		[
-			{
-				fam: "max",
-				label: "Día más caluroso",
-				sub: "temperatura máxima registrada",
-				record: detail.vigentes.absolutoMax,
-				ultimo: latestInFamily(detail, "max"),
-				familiaLabel: "máxima",
-			},
-			{
-				fam: "min",
-				label: "Noche más cálida",
-				sub: "temperatura mínima más alta",
-				record: detail.vigentes.absolutoMin,
-				ultimo: latestInFamily(detail, "min"),
-				familiaLabel: "mínima",
-			},
-		].map((c) => ({
-			...c,
-			accent: c.fam === "max" ? "var(--max)" : "var(--min)",
-			ultimoColor: c.ultimo ? colorForDays(c.fam === "max", daysSince(c.ultimo.fecha)) : null,
-		})),
+		CARDS.map((c) => {
+			const ultimo = latestInFamily(detail, c.fam);
+			return {
+				...c,
+				record: detail.vigentes[FAMILIA_TIPOS[c.fam].absoluto],
+				ultimo,
+				ultimoColor: ultimo && colorForDays(c.fam === "max", daysSince(ultimo.fecha)),
+			};
+		}),
 	);
 
 	// Rayos del sol de la card de día: 8 segmentos repartidos en círculo
 	// alrededor del disco solar (centro 104,32 en coordenadas del viewBox).
 	const sunRays = Array.from({ length: 8 }, (_, k) => {
-		const a = (k * Math.PI) / 4;
-		const cx = 104,
-			cy = 32,
-			r1 = 23,
-			r2 = 31;
-		return {
-			x1: cx + r1 * Math.cos(a),
-			y1: cy + r1 * Math.sin(a),
-			x2: cx + r2 * Math.cos(a),
-			y2: cy + r2 * Math.sin(a),
-		};
+		const [cos, sin] = [Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)];
+		return { x1: 104 + 23 * cos, y1: 32 + 23 * sin, x2: 104 + 31 * cos, y2: 32 + 31 * sin };
 	});
 </script>
 
 <section class="cards">
 	{#each cards as c (c.fam)}
-		<article class="card {c.fam}" style:--accent={c.accent}>
+		<article class="card" style:--accent="var(--{c.fam})">
 			{#if c.fam === "max"}
 				<!-- Día: sol con rayos asomando por la esquina. -->
 				<svg class="scene scene-day" viewBox="0 0 160 150" aria-hidden="true">
@@ -102,8 +86,10 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 				</p>
 				<p class="when">
 					{fmtDate(c.record.fecha)}
-					<span class="ago">· {ageLongLabel(daysSince(c.record.fecha))}</span>
-					{#if c.record.provisional}<ProvisionalTag />{/if}
+					<span class="ago">
+						· {ageLongLabel(daysSince(c.record.fecha))}{#if c.record.provisional}<ProvisionalTag
+							/>{/if}
+					</span>
 				</p>
 			{:else}
 				<p class="big empty">—</p>
@@ -114,7 +100,9 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 				<footer>
 					<span class="dot" style:background={c.ultimoColor}></span>
 					<span class="ultimo-text">
-						<span class="ultimo-label">Último récord de {c.familiaLabel}</span>
+						<span class="ultimo-label">
+							Último récord de {FAMILIA_SHORT[c.fam].toLowerCase()}
+						</span>
 						<span class="ultimo-detail">
 							{tipoLabel(c.ultimo.tipo, c.ultimo.mes)} ·
 							<b>{fmtTemp(c.ultimo.valor)}</b>
@@ -291,7 +279,6 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 		margin-left: 0.15rem;
 		letter-spacing: -0.02em;
 	}
-	.big.empty .num,
 	.big.empty {
 		color: var(--faint);
 		font-size: 2.4rem;
@@ -305,8 +292,6 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 	}
 	.ago {
 		color: var(--faint);
-		display: inline-flex;
-		column-gap: 5px;
 	}
 
 	footer {
@@ -342,11 +327,5 @@ récord de cada familia como pie. Depende de los tokens de diseño globales.
 		font-size: 0.82rem;
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
-	}
-
-	* :global {
-		.ultimo-detail .prov {
-			margin-left: 5px;
-		}
 	}
 </style>

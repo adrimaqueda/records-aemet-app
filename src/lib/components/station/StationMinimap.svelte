@@ -61,18 +61,15 @@ Uso:
 	// Capas que sobran en el inset: a esa escala solo queremos la silueta.
 	const CLUTTER = /^(transportation|transportation_name|building|boundary|aeroway)$/;
 
-	const hasCoords = $derived(Number.isFinite(detail?.lat) && Number.isFinite(detail?.lon));
+	const hasCoords = $derived(Number.isFinite(detail.lat) && Number.isFinite(detail.lon));
 	// Canarias está en 27,7–29,2 N y la estación peninsular más al sur es Melilla
 	// (35,28 N), así que la latitud basta para elegir encuadre.
 	const frame = $derived(hasCoords && detail.lat < 32 ? FRAMES.canarias : FRAMES.peninsula);
 	const ring = $derived(color ?? "var(--line-strong)");
 
-	const coords = $derived(
-		hasCoords
-			? `${Math.abs(detail.lat).toFixed(4).replace(".", ",")} ${detail.lat >= 0 ? "N" : "S"} · ` +
-					`${Math.abs(detail.lon).toFixed(4).replace(".", ",")} ${detail.lon >= 0 ? "E" : "O"}`
-			: "",
-	);
+	const fmtCoord = (v, pos, neg) =>
+		`${Math.abs(v).toFixed(4).replace(".", ",")} ${v >= 0 ? pos : neg}`;
+	const coords = $derived(`${fmtCoord(detail.lat, "N", "S")} · ${fmtCoord(detail.lon, "E", "O")}`);
 
 	/**
 	 * Barra de escala: elige la distancia "redonda" más grande que quepa.
@@ -89,7 +86,7 @@ Uso:
 		}
 		return best;
 	}
-	const scale = $derived(hasCoords ? scaleBar(CITY_ZOOM, detail.lat, 120) : null);
+	const scale = $derived(scaleBar(CITY_ZOOM, detail.lat, 120));
 
 	/** Deja el inset en silueta: fuera etiquetas, vías, edificios y límites. */
 	function silhouette(map) {
@@ -120,23 +117,40 @@ Uso:
 	}
 </script>
 
+<!-- Mapa a escala comarcal centrado en la estación. -->
+{#snippet cityMap()}
+	<Map
+		latitude={detail.lat}
+		longitude={detail.lon}
+		zoom={CITY_ZOOM}
+		minZoom={0}
+		theme="claro"
+		interactive={false}
+		attribution={false}
+	/>
+{/snippet}
+
+<!-- Silueta de la península o de Canarias con el punto de la estación. -->
+{#snippet insetMap()}
+	<Map
+		latitude={frame.center[1]}
+		longitude={frame.center[0]}
+		zoom={frame.zoom}
+		minZoom={0}
+		maxBounds={null}
+		theme="claro"
+		interactive={false}
+		attribution={false}
+		onReady={insetMarker}
+	/>
+{/snippet}
+
 {#if hasCoords}
 	{#if isMobile.current}
 		<!-- ---------- Móvil: banda a todo el ancho ---------- -->
 		<figure class="band" style:--ring={ring}>
 			<div class="band-map">
-				<Map
-					latitude={detail.lat}
-					longitude={detail.lon}
-					zoom={CITY_ZOOM}
-					minZoom={0}
-					theme="claro"
-					interactive={false}
-					attribution={false}
-					fill
-					caption=""
-					credit=""
-				/>
+				{@render cityMap()}
 				<span class="pin" aria-hidden="true"></span>
 				<div class="band-foot">
 					<span class="coords">{coords}</span>
@@ -146,57 +160,16 @@ Uso:
 					</span>
 				</div>
 			</div>
-			<div class="inset inset-band">
-				<Map
-					latitude={frame.center[1]}
-					longitude={frame.center[0]}
-					zoom={frame.zoom}
-					minZoom={0}
-					maxBounds={null}
-					theme="claro"
-					interactive={false}
-					attribution={false}
-					fill
-					caption=""
-					credit=""
-					onReady={insetMarker}
-				/>
-			</div>
+			<div class="inset inset-band">{@render insetMap()}</div>
 		</figure>
 	{:else}
 		<!-- ---------- Escritorio: medallón + inset ---------- -->
 		<div class="medallion" style:--ring={ring}>
 			<div class="disc">
-				<Map
-					latitude={detail.lat}
-					longitude={detail.lon}
-					zoom={CITY_ZOOM}
-					minZoom={0}
-					theme="claro"
-					interactive={false}
-					attribution={false}
-					fill
-					caption=""
-					credit=""
-				/>
+				{@render cityMap()}
 				<span class="pin pin-dark" aria-hidden="true"></span>
 			</div>
-			<div class="inset inset-disc">
-				<Map
-					latitude={frame.center[1]}
-					longitude={frame.center[0]}
-					zoom={frame.zoom}
-					minZoom={0}
-					maxBounds={null}
-					theme="claro"
-					interactive={false}
-					attribution={false}
-					fill
-					caption=""
-					credit=""
-					onReady={insetMarker}
-				/>
-			</div>
+			<div class="inset inset-disc">{@render insetMap()}</div>
 		</div>
 	{/if}
 {/if}
@@ -318,8 +291,7 @@ Uso:
 		box-shadow: 0 0 0 3px var(--surface);
 	}
 
-	.medallion :global(.inset-dot),
-	.band :global(.inset-dot) {
+	.inset :global(.inset-dot) {
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;

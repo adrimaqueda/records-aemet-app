@@ -12,7 +12,7 @@ export const STOPS_MAX = [
 	[90, [10, 40, 65]],
 	[365, [10, 18, 75]],
 	[1825, [0, 0, 82]],
-	[10950, [0, 0, 85]]
+	[10950, [0, 0, 85]],
 ];
 
 /** Récords de "noche cálida" (TMIN más alta): naranja → gris pálido. */
@@ -23,26 +23,18 @@ export const STOPS_MIN = [
 	[90, [35, 38, 68]],
 	[365, [30, 15, 76]],
 	[1825, [0, 0, 82]],
-	[10950, [0, 0, 85]]
+	[10950, [0, 0, 85]],
 ];
 
-function lerp(a, b, t) {
-	return a + (b - a) * t;
-}
-
+/** Color [H, S, L] para `days`, interpolando linealmente entre los stops. */
 function interpolate(stops, days) {
-	if (days <= stops[0][0]) return stops[0][1];
-	const last = stops[stops.length - 1];
-	if (days >= last[0]) return last[1];
-	for (let i = 0; i < stops.length - 1; i++) {
-		const [d0, c0] = stops[i];
-		const [d1, c1] = stops[i + 1];
-		if (days >= d0 && days <= d1) {
-			const t = (days - d0) / (d1 - d0);
-			return [lerp(c0[0], c1[0], t), lerp(c0[1], c1[1], t), lerp(c0[2], c1[2], t)];
-		}
-	}
-	return last[1];
+	const i = stops.findIndex(([d]) => d >= days);
+	if (i === 0) return stops[0][1];
+	if (i === -1) return stops[stops.length - 1][1];
+	const [d0, c0] = stops[i - 1];
+	const [d1, c1] = stops[i];
+	const t = (days - d0) / (d1 - d0);
+	return c0.map((v, k) => v + (c1[k] - v) * t);
 }
 
 function hslToString([h, s, l]) {
@@ -57,9 +49,9 @@ function hslToString([h, s, l]) {
  * @param {number|null|undefined} days  días desde el récord, null si no hay.
  */
 export function colorForDays(esMax, days) {
-	if (days == null) return hslToString([0, 0, 85]);
 	const stops = esMax ? STOPS_MAX : STOPS_MIN;
-	return hslToString(interpolate(stops, days));
+	// Sin récord: el gris del último stop.
+	return hslToString(interpolate(stops, days ?? Infinity));
 }
 
 /**
@@ -67,7 +59,7 @@ export function colorForDays(esMax, days) {
  * Resultado: ['interpolate', ['linear'], ['get','daysSinceRecord'], 0, 'hsl(...)', 7, 'hsl(...)', …]
  */
 export function buildMapboxColorExpr(stops) {
-	const out = ['interpolate', ['linear'], ['get', 'daysSinceRecord']];
+	const out = ["interpolate", ["linear"], ["get", "daysSinceRecord"]];
 	for (const [days, hsl] of stops) {
 		out.push(days, hslToString(hsl));
 	}

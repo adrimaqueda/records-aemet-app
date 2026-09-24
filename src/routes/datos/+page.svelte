@@ -1,12 +1,14 @@
 <script>
-	import { fetchStats, fetchStations, fetchStationDetail, decodeStatsRow } from "$lib/data/data.js";
+	import { fetchStats, fetchStations, fetchStationDetail } from "$lib/data/data.js";
 	import { MESES } from "$lib/utils/format.js";
 	import { PAGE_META } from "$lib/seo.js";
 	import TopBar from "$lib/components/ui/TopBar.svelte";
+	import PageHero from "$lib/components/ui/PageHero.svelte";
+	import Segmented from "$lib/components/ui/Segmented.svelte";
 	import RankingTables from "$lib/components/datos/RankingTables.svelte";
 	import RecordsChart from "$lib/components/datos/RecordsChart.svelte";
 	import { vigentesPorAnio } from "$lib/data/records.js";
-	import { max, min, rollup, sum } from "d3-array";
+	import { group, min, sum } from "d3-array";
 
 	/** Vistas de la gráfica. "vigentes" no cuenta récords batidos sino estaciones
 	 *  cuyo récord sigue en pie, agrupadas por el año en que lo fijaron. */
@@ -33,13 +35,12 @@
 
 	$effect(() => {
 		fetchStats()
-			.then((s) => (stats = s))
+			.then((s) => {
+				stats = s;
+				// Año por defecto de "mes a mes" = el más reciente disponible.
+				anio = s.anioMax;
+			})
 			.catch((e) => (loadError = String(e)));
-	});
-
-	// Año por defecto = el más reciente disponible.
-	$effect(() => {
-		if (stats && anio == null) anio = stats.anioMax;
 	});
 
 	// Lazy-load del catálogo de estaciones: al elegir una provincia y en la vista
@@ -52,26 +53,14 @@
 		}
 	});
 
-	// Al cambiar de provincia (o volver a "total"), deselecciona la estación.
-	$effect(() => {
-		grupo;
-		estacionSel = "";
-	});
-
 	// Lazy-load del detalle de la estación elegida (cacheado en memoria). El
 	// detalle ya trae todos los eventos de récord, así que el acumulado por
 	// estación se calcula en cliente sin tocar el pipeline ni la base de datos.
 	$effect(() => {
 		const ind = estacionSel;
-		if (!ind) {
-			stationDetail = null;
-			return;
-		}
-		if (stationCache.has(ind)) {
-			stationDetail = stationCache.get(ind);
-			return;
-		}
-		stationDetail = null;
+		const cached = stationCache.get(ind) ?? null;
+		stationDetail = cached;
+		if (!ind || cached) return;
 		fetchStationDetail(ind)
 			.then((d) => {
 				stationCache.set(ind, d);
@@ -82,163 +71,102 @@
 
 	// --- derivaciones ---------------------------------------------------
 
-	function rowsFor(s) {
-		if (!s) return [];
+	/** Filas del agregado de grupo (stats.json): cada fila es una tupla con las
+	 *  claves de `rowFields`. Por barra: récords de máxima/mínima (absoluto +
+	 *  mensual) y el % de estaciones que batieron récord de cada familia. */
+	function rowsForGroup(s) {
+		const row = (tupla, label, labelLong) => {
+			const r = Object.fromEntries(s.rowFields.map((k, i) => [k, tupla[i]]));
+			const denom = r.estacionesConDatos;
+			return {
+				...r,
+				label,
+				labelLong,
+				recordsMax: r.absolutoMax + r.mensualMax,
+				recordsMin: r.absolutoMin + r.mensualMin,
+				pctMax: denom > 0 ? (r.estacionesBatieronMax / denom) * 100 : 0,
+				pctMin: denom > 0 ? (r.estacionesBatieronMin / denom) * 100 : 0,
+			};
+		};
 		if (vista === "anual") {
-			const rows = s.anual[grupo] ?? [];
-			return rows.map((r, i) => {
-				const o = decodeStatsRow(r, s.rowFields);
-				return {
-					label: String(s.anios[i]),
-					labelLong: `Año ${s.anios[i]}`,
-					...o,
-				};
-			});
+			return (s.anual[grupo] ?? []).map((t, i) => row(t, String(s.anios[i]), `Año ${s.anios[i]}`));
 		}
-		const rows = s.mensual[grupo] ?? [];
-		const out = [];
-		for (let i = 0; i < rows.length; i++) {
+		return (s.mensual[grupo] ?? []).flatMap((t, i) => {
 			const [a, m] = s.ejeMensual[i];
-			if (a !== anio) continue;
-			const o = decodeStatsRow(rows[i], s.rowFields);
-			out.push({
-				label: MESES[m].slice(0, 3),
-				labelLong: `${MESES[m]} ${a}`,
-				...o,
-			});
-		}
-		return out;
+			return a === anio ? [row(t, MESES[m].slice(0, 3), `${MESES[m]} ${a}`)] : [];
+		});
 	}
 
-	/** Igual que rowsFor pero para una sola estación: cuenta sus eventos de
-	 *  récord (absoluto + mensual) por periodo. Misma definición que el agregado
-	 *  de grupo (absolutoMax+mensualMax · absolutoMin+mensualMin). El % de
-	 *  estaciones no aplica con n=1, así que se omite (estacionesConDatos = 0). */
+	/** Igual que rowsForGroup pero para una sola estación: cuenta sus eventos de
+	 *  récord (absoluto + mensual) por periodo. El % de estaciones no aplica con
+	 *  n=1, así que se omite (estacionesConDatos = 0). */
 	function rowsForStation(detail) {
-		const esMax = (t) => t === "absoluto-max" || t === "mensual-max";
-		const esMin = (t) => t === "absoluto-min" || t === "mensual-min";
-		const eventos = detail.eventos ?? [];
+		const row = (label, labelLong, eventos) => ({
+			label,
+			labelLong,
+			recordsMax: eventos.filter((e) => e.tipo.endsWith("-max")).length,
+			recordsMin: eventos.filter((e) => e.tipo.endsWith("-min")).length,
+			estacionesConDatos: 0,
+		});
+		const anioDe = (e) => +e.fecha.slice(0, 4);
 
 		if (vista === "anual") {
-			const yrs = eventos.map((e) => +e.fecha.slice(0, 4));
-			if (yrs.length === 0) return [];
-			const y0 = min(yrs);
-			const y1 = stats?.anioMax ?? max(yrs);
-			// Récords de máxima/mínima agrupados por año.
-			const porAnio = rollup(
-				eventos,
-				(v) => ({
-					max: v.filter((e) => esMax(e.tipo)).length,
-					min: v.filter((e) => esMin(e.tipo)).length,
-				}),
-				(e) => +e.fecha.slice(0, 4),
-			);
+			if (detail.eventos.length === 0) return [];
+			const porAnio = group(detail.eventos, anioDe);
 			// Rellena TODOS los años del rango (incluidos los de cero récords).
 			const out = [];
-			for (let y = y0; y <= y1; y++) {
-				const c = porAnio.get(y) ?? { max: 0, min: 0 };
-				out.push({
-					label: String(y),
-					labelLong: `Año ${y}`,
-					recordsMax: c.max,
-					recordsMin: c.min,
-					totalRecords: c.max + c.min,
-					estacionesConDatos: 0,
-				});
+			for (let y = min(porAnio.keys()); y <= stats.anioMax; y++) {
+				out.push(row(String(y), `Año ${y}`, porAnio.get(y) ?? []));
 			}
 			return out;
 		}
 
 		// Mes a mes del año seleccionado.
-		const meses = Array.from({ length: 12 }, () => ({ max: 0, min: 0 }));
-		for (const e of eventos) {
-			if (+e.fecha.slice(0, 4) !== anio) continue;
-			const m = +e.fecha.slice(5, 7) - 1;
-			if (esMax(e.tipo)) meses[m].max++;
-			else if (esMin(e.tipo)) meses[m].min++;
-		}
-		return meses.map((c, i) => ({
-			label: MESES[i + 1].slice(0, 3),
-			labelLong: `${MESES[i + 1]} ${anio}`,
-			recordsMax: c.max,
-			recordsMin: c.min,
-			totalRecords: c.max + c.min,
-			estacionesConDatos: 0,
-		}));
+		const delAnio = detail.eventos.filter((e) => anioDe(e) === anio);
+		return MESES.slice(1).map((mes, i) =>
+			row(
+				mes.slice(0, 3),
+				`${mes} ${anio}`,
+				delAnio.filter((e) => +e.fecha.slice(5, 7) === i + 1),
+			),
+		);
 	}
 
-	/** Por cada barra: récords de máxima/mínima descompuestos en absoluto+mensual,
-	 *  y los dos porcentajes (estaciones que batieron récord de máxima/mínima). */
-	function decorate(rows) {
-		return rows.map((r) => {
-			const recMax = r.absolutoMax + r.mensualMax;
-			const recMin = r.absolutoMin + r.mensualMin;
-			const denom = r.estacionesConDatos || 0;
-			return {
-				...r,
-				recordsMax: recMax,
-				recordsMin: recMin,
-				totalRecords: recMax + recMin,
-				pctMax: denom > 0 ? (r.estacionesBatieronMax / denom) * 100 : 0,
-				pctMin: denom > 0 ? (r.estacionesBatieronMin / denom) * 100 : 0,
-			};
-		});
-	}
-
-	function nombreGrupo(s) {
-		return s?.grupos.find((g) => g.id === grupo)?.nombre ?? grupo;
-	}
-
-	function grupoMeta(s) {
-		return s?.grupos.find((g) => g.id === grupo) ?? null;
-	}
-
-	/** Estaciones del catálogo que pertenecen al grupo seleccionado. */
-	function stationsOfGroup(allStations, gMeta) {
-		if (!allStations || !gMeta || gMeta.provinciasAemet.length === 0) return [];
-		const set = new Set(gMeta.provinciasAemet);
-		return allStations
-			.filter((st) => set.has(st.provincia))
-			.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-	}
-
-	// --- derivaciones reactivas -----------------------------------------
 	const esVigentes = $derived(vista === "vigentes");
+	const grupoActual = $derived(stats?.grupos.find((g) => g.id === grupo));
+	/** Estaciones de la provincia seleccionada, por nombre. */
+	const groupStations = $derived.by(() => {
+		if (!stations || !grupoActual?.provinciasAemet.length) return [];
+		const provincias = new Set(grupoActual.provinciasAemet);
+		return stations
+			.filter((st) => provincias.has(st.provincia))
+			.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+	});
+	/** Estaciones del ámbito elegido (toda la red o una provincia). */
+	const stationsAmbito = $derived(grupo === "total" ? (stations ?? []) : groupStations);
 	// Estamos en "modo estación" cuando hay una elegida y su detalle ya cargó.
 	// No aplica a la vista "vigentes": una sola estación daría una única barra.
 	const modoEstacion = $derived(
-		!esVigentes && !!(estacionSel && stationDetail && stationDetail.indicativo === estacionSel),
+		!esVigentes && !!estacionSel && stationDetail?.indicativo === estacionSel,
 	);
-	const grupoNombre = $derived(nombreGrupo(stats));
-	const grupoActual = $derived(grupoMeta(stats));
-	const groupStations = $derived(stationsOfGroup(stations, grupoActual));
-	/** Estaciones del ámbito elegido (toda la red o una provincia). */
-	const stationsAmbito = $derived(!stations ? [] : grupo === "total" ? stations : groupStations);
-	/** Vista "vigentes": se calcula en cliente desde stations.json, porque
-	 *  stats.json cuenta récords batidos (incluidos los ya superados) y aquí
-	 *  interesan solo los que siguen en pie. */
-	const vigentesRows = $derived(
-		esVigentes && stations
-			? vigentesPorAnio(stationsAmbito, { anioMax: stats?.anioMax ?? null })
-			: [],
-	);
-	// Mientras una estación está seleccionada pero su detalle aún no llegó, no
-	// mostramos el agregado de provincia (evita un parpadeo de datos ajenos).
-	const data = $derived(
-		esVigentes
-			? vigentesRows
-			: estacionSel
-				? modoEstacion
-					? rowsForStation(stationDetail)
-					: []
-				: stats
-					? decorate(rowsFor(stats))
-					: [],
-	);
+
+	const data = $derived.by(() => {
+		if (!stats) return [];
+		// "vigentes" se calcula en cliente desde stations.json, porque stats.json
+		// cuenta récords batidos (incluidos los ya superados) y aquí interesan
+		// solo los que siguen en pie.
+		if (esVigentes) return stations ? vigentesPorAnio(stationsAmbito, stats.anioMax) : [];
+		// Mientras una estación está seleccionada pero su detalle aún no llegó, no
+		// mostramos el agregado de provincia (evita un parpadeo de datos ajenos).
+		if (estacionSel) return modoEstacion ? rowsForStation(stationDetail) : [];
+		return rowsForGroup(stats);
+	});
+
 	/** Última barra de la serie de vigentes = el año más reciente del dataset. */
-	const filaUltima = $derived(esVigentes && data.length > 0 ? data[data.length - 1] : null);
+	const filaUltima = $derived(esVigentes ? data.at(-1) : null);
 	// Nombre del ámbito mostrado (provincia/total o estación) y años disponibles
 	// para el selector "mes a mes" (los de la estación cuando hay una elegida).
+	const grupoNombre = $derived(grupoActual?.nombre ?? grupo);
 	const ambitoNombre = $derived(modoEstacion ? stationDetail.nombre : grupoNombre);
 	const stationYears = $derived(
 		modoEstacion
@@ -249,9 +177,7 @@
 	// Si la estación no tiene récords en el año elegido, salta a su año más
 	// reciente con datos para que la vista "mes a mes" no quede vacía.
 	$effect(() => {
-		if (modoEstacion && stationYears.length && !stationYears.includes(anio)) {
-			anio = stationYears[stationYears.length - 1];
-		}
+		if (stationYears?.length && !stationYears.includes(anio)) anio = stationYears.at(-1);
 	});
 	// Resúmenes
 	const totalMax = $derived(sum(data, (d) => d.recordsMax));
@@ -266,22 +192,16 @@
 
 <div class="page">
 	<main>
-		<header class="hero">
-			<p class="eyebrow">Red AEMET · histórico completo</p>
-			<h1>Récords por año y mes</h1>
+		<PageHero eyebrow="Red AEMET · histórico completo" title="Récords por año y mes">
 			{#if esVigentes}
-				<p class="lead">
-					De los récords que hoy <strong>siguen en pie</strong>
-					en la red, en qué año se fijaron. Cada estación cuenta una vez por familia, en el año de su
-					récord vigente más reciente. Es la misma cuenta que el filtro de año del mapa.
-				</p>
+				De los récords que hoy <strong>siguen en pie</strong>
+				en la red, en qué año se fijaron. Cada estación cuenta una vez por familia, en el año de su récord
+				vigente más reciente. Es la misma cuenta que el filtro de año del mapa.
 			{:else}
-				<p class="lead">
-					Agregado histórico de récords batidos en la red AEMET, con el porcentaje de estaciones que
-					vivieron al menos un récord en cada periodo. Máxima y mínima se muestran por separado.
-				</p>
+				Agregado histórico de récords batidos en la red AEMET, con el porcentaje de estaciones que
+				vivieron al menos un récord en cada periodo. Máxima y mínima se muestran por separado.
 			{/if}
-		</header>
+		</PageHero>
 
 		{#if loadError}
 			<p class="error">Error: {loadError}</p>
@@ -292,27 +212,25 @@
 			<div class="controls" role="group" aria-label="Filtros">
 				<label class="control">
 					<span class="ctl-label">Ámbito</span>
-					<select bind:value={grupo}>
+					<select
+						bind:value={
+							() => grupo,
+							(v) => {
+								grupo = v;
+								// La estación elegida es de la provincia anterior.
+								estacionSel = "";
+							}
+						}
+					>
 						{#each stats.grupos as og (og.id)}
 							<option value={og.id}>{og.nombre} · {og.nEstaciones} est.</option>
 						{/each}
 					</select>
 				</label>
 
-				<div class="control toggle" role="group" aria-label="Vista">
+				<div class="control">
 					<span class="ctl-label">Vista</span>
-					<div
-						class="seg"
-						style:--seg-n={VISTAS.length}
-						style:--seg-index={VISTAS.findIndex((v) => v.id === vista)}
-					>
-						<span class="seg-pill" aria-hidden="true"></span>
-						{#each VISTAS as v (v.id)}
-							<button class:active={vista === v.id} onclick={() => (vista = v.id)}>
-								{v.label}
-							</button>
-						{/each}
-					</div>
+					<Segmented options={VISTAS} bind:value={vista} label="Vista" />
 				</div>
 
 				{#if vista === "mensual"}
@@ -362,7 +280,7 @@
 				<p class="summary">
 					<strong>{ambitoNombre}</strong>
 					·
-					{vista === "anual" ? `${data[0].label}–${data[data.length - 1].label}` : `año ${anio}`}
+					{vista === "anual" ? `${data[0].label}–${data.at(-1).label}` : `año ${anio}`}
 					→
 					<strong>{totalMax.toLocaleString("es-ES")}</strong>
 					récords de máxima ·
@@ -400,36 +318,6 @@
 		flex-direction: column;
 	}
 
-	/* --- Hero --------------------------------------------------------- */
-	.hero {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1.75rem;
-	}
-	.eyebrow {
-		margin: 0;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: var(--max);
-	}
-	h1 {
-		margin: 0;
-		font-size: clamp(1.9rem, 5vw, 2.7rem);
-		font-weight: 800;
-		line-height: 1.05;
-		letter-spacing: -0.03em;
-		color: var(--ink);
-	}
-	.lead {
-		margin: 0.2rem 0 0;
-		max-width: 62ch;
-		color: var(--muted);
-		font-size: 0.95rem;
-	}
-
 	/* --- Controles ---------------------------------------------------- */
 	.controls {
 		display: flex;
@@ -451,76 +339,9 @@
 		font-weight: 600;
 	}
 	select {
-		font: inherit;
 		font-size: 0.86rem;
 		padding: 0.45rem 2rem 0.45rem 0.8rem;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background-color: var(--surface);
-		color: var(--ink);
-		cursor: pointer;
 		min-width: 13rem;
-		appearance: none;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c6c70' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-		background-repeat: no-repeat;
-		background-position: right 0.8rem center;
-		transition: border-color 0.15s ease;
-	}
-	select:hover {
-		border-color: var(--muted);
-	}
-	.seg {
-		position: relative;
-		display: inline-grid;
-		grid-auto-flow: column;
-		grid-auto-columns: 1fr;
-		gap: 2px;
-		padding: 3px;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background: var(--surface);
-	}
-	/* Pill deslizante: ocupa el ancho de un botón y se desplaza a la opción
-	   activa según --seg-index (translateX del 100% de su ancho + el gap). El
-	   ancho se reparte entre --seg-n opciones, descontando padding y gaps. */
-	.seg-pill {
-		position: absolute;
-		top: 3px;
-		bottom: 3px;
-		left: 3px;
-		width: calc((100% - 6px - (var(--seg-n, 2) - 1) * 2px) / var(--seg-n, 2));
-		border-radius: 999px;
-		background: var(--ink);
-		box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
-		transform: translateX(calc(var(--seg-index, 0) * (100% + 2px)));
-		transition: transform 0.28s cubic-bezier(0.34, 1.2, 0.42, 1);
-		pointer-events: none;
-		z-index: 0;
-	}
-	.seg button {
-		position: relative;
-		z-index: 1;
-		background: none;
-		border: none;
-		padding: 0.4rem 0.85rem;
-		cursor: pointer;
-		font: inherit;
-		font-size: 0.84rem;
-		font-weight: 500;
-		color: var(--muted);
-		border-radius: 999px;
-		transition: color 0.2s ease;
-	}
-	.seg button:hover {
-		color: var(--ink);
-	}
-	.seg button.active {
-		color: #fff;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.seg-pill {
-			transition: none;
-		}
 	}
 
 	/* --- Resumen ----------------------------------------------------- */

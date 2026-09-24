@@ -3,6 +3,8 @@
 // sin JavaScript (Google antes de renderizar, bots de LLMs, scrapers de redes)
 // vean título, descripción y canónica correctos en cada ruta.
 
+import { capWords, fmtTemp } from "$lib/utils/format.js";
+
 export const SITE_URL = "https://records-temperatura.adrimaqueda.com";
 export const SITE_NAME = "Récords de temperatura";
 
@@ -28,15 +30,6 @@ export const PAGE_META = {
 	},
 };
 
-/** "MADRID, RETIRO" → "Madrid, Retiro" (mismo criterio que la tarjeta OG). */
-function capWords(s) {
-	return String(s)
-		.toLowerCase()
-		.replace(/(^|[\s/(.-])\p{L}/gu, (c) => c.toUpperCase());
-}
-
-const fmtValor = (v) => `${String(v).replace(".", ",")} °C`;
-
 /** Título y descripción de la ficha de una estación a partir de su JSON de
  *  detalle (stations/[indicativo].json). */
 export function stationMeta(st) {
@@ -48,8 +41,8 @@ export function stationMeta(st) {
 	const partes = [];
 	const max = st.vigentes?.absolutoMax;
 	const min = st.vigentes?.absolutoMin;
-	if (max?.valor != null) partes.push(`día más caluroso ${fmtValor(max.valor)}`);
-	if (min?.valor != null) partes.push(`noche más cálida ${fmtValor(min.valor)}`);
+	if (max?.valor != null) partes.push(`día más caluroso ${fmtTemp(max.valor)}`);
+	if (min?.valor != null) partes.push(`noche más cálida ${fmtTemp(min.valor)}`);
 	const desde = st.datosDesde ? ` Serie de AEMET desde ${st.datosDesde.slice(0, 4)}.` : "";
 
 	return {

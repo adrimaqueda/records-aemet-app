@@ -2,9 +2,9 @@
 @component
 EvolutionChart.svelte — gráfico de área escalonada de UNA serie de récords.
 
-Recibe los eventos ya filtrados de una familia ("max"/"min") y dibuja el SVG:
-escalera de récords (cada peldaño es una nueva marca), bandas de "sin datos" y
-los puntos coloreados por antigüedad. Encima, una línea de info que muestra el
+Recibe los eventos ya filtrados (al menos uno) de una familia ("max"/"min") y
+dibuja el SVG: escalera de récords (cada peldaño es una nueva marca), bandas de
+"sin datos" y los puntos coloreados por antigüedad. Encima, una línea de info que muestra el
 último récord o el punto bajo el cursor.
 
 Mide su propio ancho (`svgWidth`), así que cada instancia es independiente.
@@ -12,7 +12,7 @@ La geometría se calcula con d3 (escalas + generadores de path); el render lo
 hace Svelte.
 -->
 <script>
-	import { fmtDate, fmtNum, fmtTemp } from "$lib/utils/format.js";
+	import { fmtDate, fmtNum, fmtSubida, fmtTemp } from "$lib/utils/format.js";
 	import { ageDurationLabel, ageLongLabel, daysSince } from "$lib/utils/age.js";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
@@ -46,7 +46,7 @@ hace Svelte.
 
 	/** Geometría del gráfico: escalas, paths e hitos a partir de los eventos. */
 	function buildChart(events, width, height, sinDatos) {
-		if (events.length === 0 || width <= 0) return null;
+		if (width <= 0) return null;
 		const asc = [...events].sort((a, b) => a.fecha.localeCompare(b.fecha));
 
 		const first = new Date(asc[0].fecha);
@@ -128,39 +128,31 @@ hace Svelte.
 	const chart = $derived(buildChart(events, svgWidth, HEIGHT, sinDatos));
 	const fc = $derived(FAMILY_COLOR[fam]);
 	// Último récord de la serie (para el resumen por defecto de la línea de info).
-	const latest = $derived(
-		events.length ? events.reduce((a, b) => (b.fecha > a.fecha ? b : a)) : null,
-	);
+	const latest = $derived(events.reduce((a, b) => (b.fecha > a.fecha ? b : a)));
 </script>
 
 <!-- Línea de info ENCIMA del chart: cambia al hover/focus de un punto. -->
 <div class="info">
 	{#if chart && hovered >= 0}
 		{@const p = chart.points[hovered]}
-		<p class="tooltip">
+		<p>
 			<strong>{fmtTemp(p.valor)}</strong>
 			· {fmtDate(p.fecha)}{#if p.provisional}<ProvisionalTag />{/if}
 			{#if p.valorAnterior != null}
 				<span class="muted">
-					— {p.valor > p.valorAnterior ? "+" : "−"}{fmtNum(Math.abs(p.valor - p.valorAnterior))}°C
-					sobre {fmtTemp(p.valorAnterior)} ·
-					{ageDurationLabel(p.diasDesdeAnterior)} después
+					— {fmtSubida(p.valor, p.valorAnterior)} · {ageDurationLabel(p.diasDesdeAnterior)} después
 				</span>
 			{/if}
 		</p>
-	{:else if latest}
-		<p class="meta">
+	{:else}
+		<p>
 			<span class="meta-label">Último récord</span>
 			<strong>{fmtTemp(latest.valor)}</strong>
 			<span class="muted">· {fmtDate(latest.fecha)}</span>
 			{#if latest.provisional}<ProvisionalTag />{/if}
 			<span class="muted">· {ageLongLabel(daysSince(latest.fecha))}</span>
 			{#if latest.valorAnterior != null}
-				<span class="muted">
-					— {latest.valor > latest.valorAnterior ? "+" : "−"}{fmtNum(
-						Math.abs(latest.valor - latest.valorAnterior),
-					)}°C sobre {fmtTemp(latest.valorAnterior)}
-				</span>
+				<span class="muted">— {fmtSubida(latest.valor, latest.valorAnterior)}</span>
 			{/if}
 		</p>
 	{/if}
@@ -266,16 +258,14 @@ hace Svelte.
 		align-items: flex-end;
 		margin-bottom: 0.5rem;
 	}
-	.tooltip,
-	.meta {
+	.info p {
 		margin: 0;
 		font-size: 0.85rem;
 		line-height: 1.35;
 		color: var(--ink);
 		font-variant-numeric: tabular-nums;
 	}
-	.tooltip strong,
-	.meta strong {
+	.info strong {
 		font-size: 1.1em;
 		font-weight: 700;
 	}
@@ -290,9 +280,6 @@ hace Svelte.
 		color: var(--faint);
 		margin-right: 0.15rem;
 	}
-	.info :global(.prov) {
-		margin-left: 5px;
-	}
 
 	svg {
 		display: block;
@@ -305,16 +292,14 @@ hace Svelte.
 		font-family: var(--font);
 		font-size: 11px;
 	}
-	@media (max-width: 700px) {
-		.axis {
-			font-size: 13px;
-		}
-	}
 	.line {
 		stroke-width: 1.8;
 		stroke-linejoin: round;
 	}
 	@media (max-width: 700px) {
+		.axis {
+			font-size: 13px;
+		}
 		.line {
 			stroke-width: 2.2;
 		}

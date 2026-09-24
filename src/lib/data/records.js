@@ -1,7 +1,7 @@
-// Utilidades de récords por estación compartidas entre la página de detalle y
-// el panel del mapa.
+// Utilidades de récords por estación compartidas entre el mapa, la ficha de
+// estación y /datos.
 
-import { FAMILIA_TIPOS } from "./data.js";
+import { FAMILIAS, FAMILIA_TIPOS } from "./data.js";
 
 /**
  * Devuelve el último récord de una familia ("max" o "min"), recorriendo el
@@ -12,24 +12,14 @@ import { FAMILIA_TIPOS } from "./data.js";
  * @param {"max"|"min"} fam  familia de récord.
  */
 export function latestInFamily(d, fam) {
-	const absKey = fam === "max" ? "absolutoMax" : "absolutoMin";
-	const monKey = fam === "max" ? "max" : "min";
-	const tipoAbs = fam === "max" ? "absoluto-max" : "absoluto-min";
-	const tipoMon = fam === "max" ? "mensual-max" : "mensual-min";
-
-	const items = [];
-	if (d.vigentes[absKey]) {
-		items.push({ ...d.vigentes[absKey], tipo: tipoAbs, mes: null });
-	}
+	const abs = d.vigentes[FAMILIA_TIPOS[fam].absoluto];
+	let best = abs ? { ...abs, tipo: `absoluto-${fam}`, mes: null } : null;
 	for (const m of d.mensuales ?? []) {
-		if (m[monKey]) items.push({ ...m[monKey], tipo: tipoMon, mes: m.mes });
+		const r = m[fam];
+		// Las fechas son ISO (yyyy-mm-dd): el orden lexicográfico es el cronológico.
+		if (r && (!best || r.fecha > best.fecha)) best = { ...r, tipo: `mensual-${fam}`, mes: m.mes };
 	}
-	if (items.length === 0) return null;
-	items.sort((a, b) => {
-		if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
-		return a.tipo === tipoAbs ? -1 : 1;
-	});
-	return items[0];
+	return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,6 +33,8 @@ export function latestInFamily(d, fam) {
 // red es la ESTACIÓN: el año de su récord vigente más reciente por familia.
 // Por eso mapa y gráfica hablan de "estaciones cuyo récord actual es de X".
 // ---------------------------------------------------------------------------
+
+const anioDe = (fecha) => +fecha.slice(0, 4);
 
 /**
  * Último récord vigente de una familia para una fila de `stations.json`,
@@ -58,17 +50,14 @@ export function ultimoVigenteEnFamilia(s, fam) {
 	const { absoluto, mensual } = FAMILIA_TIPOS[fam];
 	const a = s.ultimoPorTipo?.[absoluto];
 	const m = s.ultimoPorTipo?.[mensual];
-	if (!a && !m) return null;
-	if (!a) return { ...m, esAbsoluto: false };
-	if (!m) return { ...a, esAbsoluto: true };
-	// Las fechas son ISO (yyyy-mm-dd): el orden lexicográfico es el cronológico.
-	return a.fecha >= m.fecha ? { ...a, esAbsoluto: true } : { ...m, esAbsoluto: false };
+	if (a && (!m || a.fecha >= m.fecha)) return { ...a, esAbsoluto: true };
+	return m ? { ...m, esAbsoluto: false } : null;
 }
 
 /** Año del récord vigente más reciente de la familia, o null si no hay. */
 export function anioDeVigente(s, fam) {
 	const u = ultimoVigenteEnFamilia(s, fam);
-	return u?.fecha ? +u.fecha.slice(0, 4) : null;
+	return u ? anioDe(u.fecha) : null;
 }
 
 /**
@@ -78,22 +67,16 @@ export function anioDeVigente(s, fam) {
  */
 export function vigentesEnAnio(s, fam, anio) {
 	const { absoluto, mensual } = FAMILIA_TIPOS[fam];
-	const t = s.ultimoPorTipo ?? {};
-	let n = 0;
-	for (const k of [absoluto, mensual]) {
-		const r = t[k];
-		if (r?.fecha && +r.fecha.slice(0, 4) === anio) n++;
-	}
-	return n;
+	return [absoluto, mensual].filter((k) => {
+		const r = s.ultimoPorTipo?.[k];
+		return r && anioDe(r.fecha) === anio;
+	}).length;
 }
 
 /** Años (descendente) en los que alguna estación tiene su récord vigente de la familia. */
 export function aniosConVigentes(stations, fam) {
-	const set = new Set();
-	for (const s of stations ?? []) {
-		const y = anioDeVigente(s, fam);
-		if (y != null) set.add(y);
-	}
+	const set = new Set(stations.map((s) => anioDeVigente(s, fam)));
+	set.delete(null);
 	return [...set].sort((a, b) => b - a);
 }
 
@@ -103,27 +86,25 @@ export function aniosConVigentes(stations, fam) {
  * rango (incluidos los que quedan a cero) para que el eje no tenga saltos.
  *
  * @param {any[]} stations  estaciones del ámbito (red completa o provincia).
- * @param {{anioMax?: number|null}} [opts]  último año del dataset, para que la
- *        serie llegue hasta hoy aunque el año en curso aún no tenga récords.
+ * @param {number|null} anioMax  último año del dataset, para que la serie llegue
+ *        hasta hoy aunque el año en curso aún no tenga récords.
  */
-export function vigentesPorAnio(stations, { anioMax = null } = {}) {
+export function vigentesPorAnio(stations, anioMax = null) {
 	const porAnio = new Map();
-	let y0 = Infinity;
-	let y1 = -Infinity;
-
-	for (const s of stations ?? []) {
-		for (const fam of ["max", "min"]) {
+	for (const s of stations) {
+		for (const fam of FAMILIAS) {
 			const y = anioDeVigente(s, fam);
 			if (y == null) continue;
 			if (!porAnio.has(y)) porAnio.set(y, { max: 0, min: 0 });
 			porAnio.get(y)[fam]++;
-			if (y < y0) y0 = y;
-			if (y > y1) y1 = y;
 		}
 	}
-	if (!Number.isFinite(y0)) return [];
-	if (anioMax != null && anioMax > y1) y1 = anioMax;
+	if (porAnio.size === 0) return [];
 
+	const years = [...porAnio.keys()];
+	const y0 = Math.min(...years);
+	const y1 = Math.max(anioMax ?? -Infinity, ...years);
+	// Denominador del tooltip: estaciones del ámbito.
 	const total = stations.length;
 	const out = [];
 	for (let y = y0; y <= y1; y++) {
@@ -133,14 +114,9 @@ export function vigentesPorAnio(stations, { anioMax = null } = {}) {
 			labelLong: `Año ${y}`,
 			recordsMax: c.max,
 			recordsMin: c.min,
-			totalRecords: c.max + c.min,
-			// Denominador del tooltip: estaciones del ámbito. `estacionesBatieron*`
-			// coincide con el recuento porque aquí la unidad ya es la estación.
 			estacionesConDatos: total,
-			estacionesBatieronMax: c.max,
-			estacionesBatieronMin: c.min,
-			pctMax: total > 0 ? (c.max / total) * 100 : 0,
-			pctMin: total > 0 ? (c.min / total) * 100 : 0,
+			pctMax: (c.max / total) * 100,
+			pctMin: (c.min / total) * 100,
 		});
 	}
 	return out;

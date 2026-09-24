@@ -16,12 +16,13 @@ Sobre una única fuente GeoJSON añade 4 capas al mapa padre:
                          un prefijo "~".
 
 Propiedades esperadas en cada feature:
+  - indicativo (string)      → se devuelve en `onClick`
   - daysSinceRecord (number, grande si no hay)
   - esMax (boolean)          → hue rojo (max) vs naranja (min)
   - esAbsoluto (boolean)     → anillo destacado
   - provisional (boolean)    → récord reconstruido del horario, aún sin dato
                                definitivo: borde blanco y número con "~".
-  - dayNumber (string)       → "12" o "" si >30 días
+  - labelPriority (number)   → orden de colocación de los números (ver abajo)
   - uniforme (boolean)       → filtro por año activo: todas las estaciones
                                mostradas son del mismo año, así que la escala de
                                antigüedad se apaga y se pintan todas igual
@@ -31,7 +32,8 @@ Propiedades esperadas en cada feature:
 	import { getContext, onDestroy } from "svelte";
 	import { buildMapboxColorExpr, colorForDays, STOPS_MAX, STOPS_MIN } from "$lib/utils/colors.js";
 
-	let { data, onClick = null } = $props();
+	/** @type {{ data: any, onClick: (indicativo: string) => void }} */
+	let { data, onClick } = $props();
 
 	const ctx = getContext("maplibre-map");
 	if (!ctx) throw new Error("StationsLayer must be placed inside a <Map>.");
@@ -41,6 +43,7 @@ Propiedades esperadas en cada feature:
 	const RING = "stations-abs-ring";
 	const CIRCLE = "stations-circle";
 	const LABEL = "stations-label";
+	const LAYERS = [LABEL, CIRCLE, RING, HALO];
 
 	// Color: vibrante para frescos, casi gris para antiguos. Las tablas STOPS_*
 	// están compartidas con colors.js para que el JS (border del panel) pueda
@@ -197,12 +200,17 @@ Propiedades esperadas en cada feature:
 		["interpolate", ["linear"], ["get", "daysSinceRecord"], 0, 0.7, 30, 0.5, 365, 0.25, 1825, 0],
 	];
 
+	function removeLayers(map) {
+		for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
+		if (map.getSource(SRC)) map.removeSource(SRC);
+	}
+
+	// Se llama al montar y en cada `style.load` (cambio de tema): el estilo
+	// nuevo llega sin nuestras capas.
 	function add() {
 		const map = ctx.getMap();
 		if (!map) return;
-
-		for (const id of [LABEL, CIRCLE, RING, HALO]) if (map.getLayer(id)) map.removeLayer(id);
-		if (map.getSource(SRC)) map.removeSource(SRC);
+		removeLayers(map);
 
 		map.addSource(SRC, { type: "geojson", data });
 
@@ -210,7 +218,7 @@ Propiedades esperadas en cada feature:
 			id: HALO,
 			type: "circle",
 			source: SRC,
-			filter: ["all", ["!", esUniforme], ["<", ["get", "daysSinceRecord"], 30]],
+			filter: ["all", ["!", esUniforme], ["<", ["get", "daysSinceRecord"], HALO_MAX_DAYS]],
 			paint: {
 				"circle-radius": haloRadius,
 				"circle-color": circleColor,
@@ -261,7 +269,11 @@ Propiedades esperadas en cada feature:
 			filter: ["all", ["!", esUniforme], ["<=", ["get", "daysSinceRecord"], 30]],
 			layout: {
 				// Prefijo "~" para los récords provisionales (p. ej. "~3").
-				"text-field": ["concat", ["case", ["get", "provisional"], "~", ""], ["get", "dayNumber"]],
+				"text-field": [
+					"concat",
+					["case", ["get", "provisional"], "~", ""],
+					["to-string", ["get", "daysSinceRecord"]],
+				],
 				"text-font": ["Noto Sans Bold"],
 				// Texto más pequeño para los récords de 16-30 días (sus círculos
 				// son menores); los de los últimos 15 días mantienen su tamaño.
@@ -305,53 +317,31 @@ Propiedades esperadas en cada feature:
 				],
 			},
 		});
-
-		if (onClick) {
-			// off antes de on: add() se vuelve a llamar en cada style.load
-			// (cambio de tema), así evitamos apilar manejadores duplicados.
-			map.off("click", CIRCLE, handleClick);
-			map.off("mouseenter", CIRCLE, onEnter);
-			map.off("mouseleave", CIRCLE, onLeave);
-			map.on("click", CIRCLE, handleClick);
-			map.on("mouseenter", CIRCLE, onEnter);
-			map.on("mouseleave", CIRCLE, onLeave);
-		}
 	}
 
-	function remove() {
-		const map = ctx.getMap();
-		if (!map) return;
-		if (onClick) {
-			map.off("click", CIRCLE, handleClick);
-			map.off("mouseenter", CIRCLE, onEnter);
-			map.off("mouseleave", CIRCLE, onLeave);
-		}
-		for (const id of [LABEL, CIRCLE, RING, HALO]) if (map.getLayer(id)) map.removeLayer(id);
-		if (map.getSource(SRC)) map.removeSource(SRC);
-	}
-
-	function handleClick(e) {
+	// Los manejadores van por id de capa y MapLibre los conserva al cambiar de
+	// estilo, así que basta con registrarlos una vez.
+	const handleClick = (e) => {
 		const f = e.features?.[0];
-		if (f && onClick) onClick(f, e);
-	}
-	function onEnter() {
-		ctx.getMap()?.getCanvas().style.setProperty("cursor", "pointer");
-	}
-	function onLeave() {
-		ctx.getMap()?.getCanvas().style.removeProperty("cursor");
-	}
+		if (f) onClick(f.properties.indicativo);
+	};
+	const onEnter = () => (ctx.getMap().getCanvas().style.cursor = "pointer");
+	const onLeave = () => (ctx.getMap().getCanvas().style.cursor = "");
+	const handlers = { click: handleClick, mouseenter: onEnter, mouseleave: onLeave };
 
 	add();
 	ctx.onStyleLoad(add);
+	for (const [type, fn] of Object.entries(handlers)) ctx.getMap().on(type, CIRCLE, fn);
 
 	$effect(() => {
-		const map = ctx.getMap();
-		const src = map?.getSource(SRC);
-		if (src) src.setData(data);
+		ctx.getMap()?.getSource(SRC)?.setData(data);
 	});
 
 	onDestroy(() => {
 		ctx.offStyleLoad(add);
-		remove();
+		const map = ctx.getMap();
+		if (!map) return;
+		for (const [type, fn] of Object.entries(handlers)) map.off(type, CIRCLE, fn);
+		removeLayers(map);
 	});
 </script>

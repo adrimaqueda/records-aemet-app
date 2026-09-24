@@ -11,21 +11,15 @@ import { SITE_URL, PAGE_META, DEFAULT_DESCRIPTION, SITE_NAME, stationMeta } from
 const escAttr = (s) =>
 	String(s).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 
-// Reemplazo por propiedad del meta (no por la URL actual), para que siga
-// funcionando aunque cambie el contenido estático de app.html. El \s+ tolera
-// el salto de línea que prettier mete entre atributos; la función como
-// replacement evita que "$" en el valor se interprete.
-const setMeta = (html, attr, value) =>
-	html.replace(
-		new RegExp(`(<meta\\s+${attr}\\s+content=")[^"]*(")`),
-		(_, a, b) => a + escAttr(value) + b,
-	);
+// Reemplaza el valor del atributo que cierra `prefix`. Se localiza la etiqueta
+// por su propiedad (no por la URL actual), para que siga funcionando aunque
+// cambie el contenido estático de app.html. La función como replacement
+// evita que "$" en el valor se interprete.
+const setAttr = (html, prefix, value) =>
+	html.replace(new RegExp(`(${prefix}")[^"]*(")`), (_, a, b) => a + escAttr(value) + b);
 
-const setCanonical = (html, url) =>
-	html.replace(
-		new RegExp(`(<link rel="canonical" href=")[^"]*(")`),
-		(_, a, b) => a + escAttr(url) + b,
-	);
+// El \s+ tolera el salto de línea que prettier mete entre atributos.
+const metaPrefix = (attr) => `<meta\\s+${attr}\\s+content=`;
 
 export async function handle({ event, resolve }) {
 	const path = event.url.pathname.replace(/\/+$/, "") || "/";
@@ -55,15 +49,20 @@ export async function handle({ event, resolve }) {
 
 	return resolve(event, {
 		transformPageChunk: ({ html }) => {
-			html = setMeta(html, 'name="description"', meta.description);
-			html = setMeta(html, 'property="og:title"', meta.title);
-			html = setMeta(html, 'property="og:description"', meta.description);
-			html = setMeta(html, 'property="og:url"', pageUrl);
-			html = setMeta(html, 'property="og:image"', ogImage);
-			html = setMeta(html, 'name="twitter:title"', meta.title);
-			html = setMeta(html, 'name="twitter:description"', meta.description);
-			html = setMeta(html, 'name="twitter:image"', ogImage);
-			html = setCanonical(html, pageUrl);
+			const metas = {
+				'name="description"': meta.description,
+				'property="og:title"': meta.title,
+				'property="og:description"': meta.description,
+				'property="og:url"': pageUrl,
+				'property="og:image"': ogImage,
+				'name="twitter:title"': meta.title,
+				'name="twitter:description"': meta.description,
+				'name="twitter:image"': ogImage,
+			};
+			for (const [attr, value] of Object.entries(metas)) {
+				html = setAttr(html, metaPrefix(attr), value);
+			}
+			html = setAttr(html, '<link rel="canonical" href=', pageUrl);
 			if (injectTitle) {
 				html = html.replace("<head>", `<head>\n\t<title>${escAttr(meta.title)}</title>`);
 			}

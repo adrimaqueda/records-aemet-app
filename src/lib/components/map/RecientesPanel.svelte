@@ -8,41 +8,31 @@ los récords de los últimos 15 días; con el filtro de año activo la página l
 pasa las estaciones de ese año y cambia el título.
 
 Props:
-  recientes:  array de { s, ult, n } generado en la página.
-  titulo:     cabecera del panel ("Récords recientes" por defecto).
+  items:      array de { s, ult, n } generado en la página.
+  titulo:     cabecera del panel.
   onSelect:   (station) => void  — al hacer click en una fila.
+  selected:   estación abierta en el panel de detalle (en móvil pliega el listado).
   badgeLabel: (n) => string — texto que explica el badge ×N (el significado de
-              n cambia según el modo del panel: por defecto son los récords
-              batidos en los últimos 15 días).
+              n cambia según el modo del panel).
 -->
 <script>
 	import { slide } from "svelte/transition";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
-	import { fmtTemp } from "$lib/utils/format.js";
+	import { fmtDayMonth, fmtTemp } from "$lib/utils/format.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
-	let {
-		recientes = [],
-		titulo = "Récords recientes",
-		onSelect = null,
-		selected,
-		badgeLabel = (n) => `${n} récords batidos en los últimos 15 días`,
-	} = $props();
+	let { items, titulo, onSelect, selected, badgeLabel } = $props();
 
+	const PAGE_SIZE = 10;
 	let offset = $state(0);
 	// En móvil arrancamos colapsado; en desktop, expandido.
 	let visible = $state(!isMobile.current);
-	const PAGE_SIZE = 10;
 
-	// Al cambiar el listado (e.g., al cambiar de familia), vuelve al inicio.
+	// Al cambiar el listado (p. ej., al cambiar de familia), vuelve al inicio.
 	$effect(() => {
-		recientes;
+		items;
 		offset = 0;
 	});
-
-	function focus(s) {
-		if (onSelect) onSelect(s);
-	}
 
 	// En móvil, al abrir el panel de una estación se colapsa el listado.
 	$effect(() => {
@@ -50,30 +40,29 @@ Props:
 	});
 </script>
 
-{#if recientes.length > 0}
-	<aside class="recientes" class:collapsed={!visible}>
-		<button
-			onclick={() => (visible = !visible)}
-			aria-label={visible ? "Ocultar listado" : "Mostrar listado"}
-			aria-expanded={visible}
-		>
-			<h2>
+{#if items.length > 0}
+	<aside class="recientes">
+		<h2>
+			<button
+				class="head"
+				onclick={() => (visible = !visible)}
+				aria-label={visible ? "Ocultar listado" : "Mostrar listado"}
+				aria-expanded={visible}
+			>
 				<span class="title">
 					{titulo}
-					<span class="count">{recientes.length}</span>
+					<span class="count">{items.length}</span>
 				</span>
-				<span class="toggle">
-					{visible ? "▾" : "▴"}
-				</span>
-			</h2>
-		</button>
+				<span class="toggle" aria-hidden="true">{visible ? "▾" : "▴"}</span>
+			</button>
+		</h2>
 
 		{#if visible}
-			<div class="body" transition:slide={{ duration: 200 }}>
+			<div transition:slide={{ duration: 200 }}>
 				<ol>
-					{#each recientes.slice(offset, offset + PAGE_SIZE) as { s, ult, n } (s.indicativo)}
+					{#each items.slice(offset, offset + PAGE_SIZE) as { s, ult, n } (s.indicativo)}
 						<li>
-							<button class="link" onclick={() => focus(s)}>
+							<button class="link" onclick={() => onSelect(s)}>
 								<span class="rec-name">
 									{s.nombre}
 									{#if n > 1}
@@ -84,12 +73,7 @@ Props:
 									{/if}
 								</span>
 								<span class="rec-meta">
-									{fmtTemp(ult.valor)} ·
-									{new Date(ult.fecha).toLocaleDateString("es-ES", {
-										day: "numeric",
-										month: "short",
-										timeZone: "UTC",
-									})} · Récord {ult.esAbsoluto
+									{fmtTemp(ult.valor)} · {fmtDayMonth(ult.fecha)} · Récord {ult.esAbsoluto
 										? "absoluto"
 										: "mensual"}{#if ult.provisional}<ProvisionalTag />{/if}
 								</span>
@@ -97,23 +81,22 @@ Props:
 						</li>
 					{/each}
 				</ol>
-				{#if recientes.length > PAGE_SIZE}
+				{#if items.length > PAGE_SIZE}
 					<nav class="pager">
 						<button
 							aria-label="Anteriores"
 							disabled={offset === 0}
-							onclick={() => (offset = Math.max(0, offset - PAGE_SIZE))}
+							onclick={() => (offset -= PAGE_SIZE)}
 						>
 							←
 						</button>
 						<span class="range">
-							{offset + 1}–{Math.min(offset + PAGE_SIZE, recientes.length)} de {recientes.length}
+							{offset + 1}–{Math.min(offset + PAGE_SIZE, items.length)} de {items.length}
 						</span>
 						<button
 							aria-label="Siguientes"
-							disabled={offset + PAGE_SIZE >= recientes.length}
-							onclick={() =>
-								(offset = Math.min(Math.max(0, recientes.length - PAGE_SIZE), offset + PAGE_SIZE))}
+							disabled={offset + PAGE_SIZE >= items.length}
+							onclick={() => (offset += PAGE_SIZE)}
 						>
 							→
 						</button>
@@ -138,13 +121,6 @@ Props:
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 		font-family: system-ui, sans-serif;
 		overflow: hidden;
-
-		button {
-			border: none;
-			width: 100%;
-			padding: 0;
-			cursor: pointer;
-		}
 	}
 	@media (min-width: 700px) {
 		.recientes {
@@ -156,13 +132,21 @@ Props:
 	}
 
 	h2 {
+		margin: 0;
+	}
+	.head {
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
-		margin: 0;
+		width: 100%;
+		border: none;
+		cursor: pointer;
+		font: inherit;
 		font-size: 0.85rem;
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
+		text-align: left;
 		background-color: #222;
 		color: #fafafa;
 		padding: 0.6rem 0.9rem;
@@ -188,16 +172,13 @@ Props:
 		height: 26px;
 		display: grid;
 		place-items: center;
-		background: none;
 		border: 1px solid transparent;
 		border-radius: 4px;
 		font-size: 0.95rem;
 		line-height: 1;
 		color: #f3f3ef;
-		cursor: pointer;
-		padding: 0;
 	}
-	.toggle:hover {
+	.head:hover .toggle {
 		border-color: #ddd;
 		background: #f3f3ef;
 		color: #333;
@@ -205,7 +186,6 @@ Props:
 
 	ol {
 		list-style: none;
-		padding: 0;
 		margin: 0.4rem 0 0;
 		padding: 0 0.9rem 0.6rem;
 	}
@@ -286,21 +266,5 @@ Props:
 		font-size: 0.75rem;
 		color: #666;
 		font-variant-numeric: tabular-nums;
-	}
-
-	* :global .prov {
-		margin-left: 5px;
-	}
-
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>

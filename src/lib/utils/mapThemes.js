@@ -26,12 +26,7 @@ export const MAP_THEMES = [
 		id: "noche",
 		url: "/estilo-mapa-noche.json",
 		swatch: ["#10172a", "#191e30", "#4a5170", "#eef0f7"],
-	}
+	},
 ];
 
 export const DEFAULT_THEME = MAP_THEMES[0].id;
-
-/** Devuelve el tema por id, o el primero (claro) si no existe. */
-export function getTheme(id) {
-	return MAP_THEMES.find((t) => t.id === id) ?? MAP_THEMES[0];
-}

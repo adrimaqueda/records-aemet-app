@@ -1,19 +1,20 @@
 <!--
 @component
 ProvisionalTag.svelte — etiqueta "provisional" para récords reconstruidos del
-horario en tiempo real, aún sin el dato diario definitivo de AEMET. Misma píldora
-ámbar que usa el panel de récords recientes, para un marcado consistente.
+horario en tiempo real, aún sin el dato diario definitivo de AEMET. Se coloca
+pegada (sin espacio) detrás del texto al que acompaña: ya trae su margen.
 -->
 <span
-	class="prov"
+	class="tag"
 	title="Récord reconstruido del horario reciente, aún sin dato definitivo de AEMET"
 >
 	provisional
 </span>
 
 <style>
-	.prov {
+	.tag {
 		display: inline-block;
+		margin-left: 5px;
 		padding: 0.02rem 0.35rem;
 		border: 1px solid #c9a227;
 		color: #8a6d00;

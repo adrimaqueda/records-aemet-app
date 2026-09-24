@@ -1,17 +1,21 @@
+<!--
+@component
+RecordsMensuales.svelte — tabla con el día más caluroso y la noche más cálida
+de cada mes. Resalta en color los que son además el récord absoluto y en
+negrita los del año en curso.
+-->
 <script>
 	import { fmtTemp, fmtDate, MESES } from "$lib/utils/format.js";
+	import { FAMILIAS, FAMILIA_TIPOS } from "$lib/data/data.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
+
 	let { detail } = $props();
 
 	const currentYear = new Date().getFullYear().toString();
-	const esEsteAnio = (r) => r?.fecha?.slice(0, 4) === currentYear;
 
 	/** ¿Es este registro mensual el récord absoluto vigente de su familia?
 	 *  Se marca en color para que coincida con las cards de arriba. */
-	const esAbsoluto = (r, fam) => {
-		const abs = fam === "max" ? detail.vigentes.absolutoMax : detail.vigentes.absolutoMin;
-		return !!(r && abs && r.fecha === abs.fecha);
-	};
+	const esAbsoluto = (r, fam) => r?.fecha === detail.vigentes[FAMILIA_TIPOS[fam].absoluto]?.fecha;
 </script>
 
 <section>
@@ -41,16 +45,15 @@
 		</thead>
 		<tbody>
 			{#each detail.mensuales as m (m.mes)}
-				{@const cells = [
-					{ r: m.max, fam: "max" },
-					{ r: m.min, fam: "min" },
-				]}
 				<tr>
 					<th scope="row" class="mes">{MESES[m.mes]}</th>
-					{#each cells as { r, fam } (fam)}
-						{@const absoluto = esAbsoluto(r, fam)}
-						{@const anio = esEsteAnio(r)}
-						<td class:absoluto class:anio data-fam={fam}>
+					{#each FAMILIAS as fam (fam)}
+						{@const r = m[fam]}
+						<td
+							class:absoluto={r && esAbsoluto(r, fam)}
+							class:anio={r?.fecha.startsWith(currentYear)}
+							style:--fam="var(--{fam})"
+						>
 							{#if r}
 								<span class="t">{fmtTemp(r.valor)}</span>
 								<span class="d">
@@ -93,7 +96,6 @@
 	.key {
 		display: inline-flex;
 		align-items: center;
-		/*gap: 0.35rem;*/
 	}
 	.key b {
 		color: var(--ink);
@@ -170,30 +172,23 @@
 		margin-top: 0.1rem;
 		font-size: 0.76rem;
 		color: var(--faint);
-		column-gap: 5px;
 	}
 	/* Récord de este año: en negrita y con el texto a tono normal. */
-	.anio {
-		.t {
-			font-weight: 700;
-			color: var(--ink);
-		}
-		.d {
-			color: var(--ink);
-		}
+	.anio .t {
+		font-weight: 700;
+		color: var(--ink);
+	}
+	.anio .d {
+		color: var(--ink);
 	}
 	/* Récord absoluto: en color de familia (como las cards) + negrita y marca
 	   lateral. Gana en especificidad al estilo de "este año". */
 	.absoluto .t {
 		font-weight: 700;
+		color: var(--fam);
 	}
-	.absoluto[data-fam="max"] {
-		.t {
-			color: var(--max);
-		}
-	}
-	.absoluto[data-fam="min"] .t {
-		color: var(--min);
+	.absoluto .d {
+		color: var(--ink);
 	}
 	.absoluto::before {
 		content: "";
@@ -203,17 +198,7 @@
 		bottom: 0.65rem;
 		width: 3px;
 		border-radius: 999px;
-	}
-	.absoluto[data-fam="max"]::before {
-		background: var(--max);
-	}
-	.absoluto[data-fam="min"]::before {
-		background: var(--min);
-	}
-
-	.absoluto[data-fam="max"] .d,
-	.absoluto[data-fam="min"] .d {
-		color: var(--ink);
+		background: var(--fam);
 	}
 
 	@media (max-width: 520px) {

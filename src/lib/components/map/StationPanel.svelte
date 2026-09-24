@@ -1,5 +1,11 @@
+<!--
+@component
+StationPanel.svelte — panel de detalle de la estación elegida en el mapa: el
+último récord de la familia activa (el que marca el punto) y, si es otro, el
+absoluto vigente como contexto. El borde toma el color del marcador.
+-->
 <script>
-	import { fetchStationDetail } from "$lib/data/data.js";
+	import { fetchStationDetail, FAMILIA_SHORT, FAMILIA_TIPOS } from "$lib/data/data.js";
 	import { fmtDate, fmtNum, fmtTemp, tipoLabel } from "$lib/utils/format.js";
 	import { ageLongLabel, daysSince } from "$lib/utils/age.js";
 	import { latestInFamily } from "$lib/data/records.js";
@@ -7,26 +13,18 @@
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 	import { fly } from "svelte/transition";
 
-	let { indicativo = null, color = null, onClose, familia = "max" } = $props();
+	let { indicativo = null, color = null, onClose, familia } = $props();
 
 	// El #await consume el promise y se ocupa de los estados loading / data / error.
 	const detailPromise = $derived(indicativo ? fetchStationDetail(indicativo) : null);
-
-	const accent = $derived(familia === "max" ? "var(--max)" : "var(--min)");
-	const familiaLabel = $derived(familia === "max" ? "máxima" : "mínima");
-
-	/** El récord que marca el mapa: el más reciente de la familia (absoluto o
-	 *  mensual). El absoluto vigente se muestra aparte como contexto. */
-	function absolutoDe(detail) {
-		return familia === "max" ? detail.vigentes.absolutoMax : detail.vigentes.absolutoMin;
-	}
 </script>
 
 {#if indicativo}
 	<aside
 		class="panel"
 		style:--edge={color}
-		style:--accent={accent}
+		style:--spinner-color={color}
+		style:--accent="var(--{familia})"
 		transition:fly={{ y: 400, duration: 300 }}
 	>
 		<button class="close" onclick={onClose} aria-label="Cerrar">×</button>
@@ -36,47 +34,44 @@
 				<div class="spinner" aria-hidden="true"></div>
 			</div>
 		{:then detail}
-			{#if detail}
-				{@const ultimo = latestInFamily(detail, familia)}
-				{@const abs = absolutoDe(detail)}
-				<StationHero {detail} compact />
+			{@const ultimo = latestInFamily(detail, familia)}
+			{@const abs = detail.vigentes[FAMILIA_TIPOS[familia].absoluto]}
+			<StationHero {detail} compact />
 
-				<div class="record">
-					<p class="kicker">
-						<span class="dot" style:background={color}></span>
-						Último récord de {familiaLabel}
+			<div class="record">
+				<p class="kicker">
+					<span class="dot" style:background={color}></span>
+					Último récord de {FAMILIA_SHORT[familia].toLowerCase()}
+				</p>
+
+				{#if ultimo}
+					<p class="big">
+						<span class="num">{fmtNum(ultimo.valor)}</span>
+						<span class="unit">°C</span>
 					</p>
+					<p class="what">
+						{tipoLabel(ultimo.tipo, ultimo.mes)}{#if ultimo.provisional}<ProvisionalTag />{/if}
+					</p>
+					<p class="when">
+						{fmtDate(ultimo.fecha)} · {ageLongLabel(daysSince(ultimo.fecha))}
+					</p>
+				{:else}
+					<p class="big empty">—</p>
+					<p class="when">Sin récord registrado</p>
+				{/if}
 
-					{#if ultimo}
-						<p class="big">
-							<span class="num">{fmtNum(ultimo.valor)}</span>
-							<span class="unit">°C</span>
-						</p>
-						<p class="what">
-							{tipoLabel(ultimo.tipo, ultimo.mes)}{#if ultimo.provisional}<ProvisionalTag />{/if}
-						</p>
-						<p class="when">
-							{fmtDate(ultimo.fecha)} · {ageLongLabel(daysSince(ultimo.fecha))}
-						</p>
-					{:else}
-						<p class="big empty">—</p>
-						<p class="when">Sin récord registrado</p>
-					{/if}
+				{#if abs && abs.fecha !== ultimo?.fecha}
+					<p class="abs">
+						<span class="abs-label">Récord absoluto</span>
+						{fmtTemp(abs.valor)} · {fmtDate(abs.fecha)}{#if abs.provisional}<ProvisionalTag />{/if}
+					</p>
+				{/if}
+			</div>
 
-					{#if abs && (!ultimo || abs.fecha !== ultimo.fecha)}
-						<p class="abs">
-							<span class="abs-label">Récord absoluto</span>
-							{fmtTemp(abs.valor)} · {fmtDate(abs.fecha)}{#if abs.provisional}<ProvisionalTag
-								/>{/if}
-						</p>
-					{/if}
-				</div>
-
-				<a class="cta" href="/estacion/{detail.indicativo}">
-					Ver toda la información
-					<span aria-hidden="true">→</span>
-				</a>
-			{/if}
+			<a class="cta" href="/estacion/{detail.indicativo}">
+				Ver toda la información
+				<span aria-hidden="true">→</span>
+			</a>
 		{:catch err}
 			<p class="error">Error: {err.message ?? err}</p>
 		{/await}
@@ -183,8 +178,7 @@
 		margin-left: 0.15rem;
 		letter-spacing: -0.02em;
 	}
-	.big.empty,
-	.big.empty .num {
+	.big.empty {
 		font-size: 2.4rem;
 		font-weight: 600;
 		color: var(--faint);
@@ -231,7 +225,6 @@
 		border-radius: 999px;
 		font-size: 0.86rem;
 		font-weight: 600;
-		transition: transform 0.15s ease;
 	}
 	.cta span {
 		transition: transform 0.18s ease;
@@ -245,33 +238,13 @@
 		place-items: center;
 		padding: 2.5rem 0;
 	}
-	.spinner {
-		width: 26px;
-		height: 26px;
-		border-radius: 50%;
-		border: 2.5px solid var(--line-strong);
-		border-top-color: var(--edge, var(--max));
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
 	.error {
 		color: #b00;
 		margin: 0;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.spinner {
-			animation-duration: 2s;
-		}
 		.cta span {
 			transition: none;
 		}
-	}
-
-	* :global .prov {
-		margin-left: 5px;
 	}
 </style>

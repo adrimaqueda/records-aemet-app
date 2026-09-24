@@ -1,6 +1,7 @@
 <script>
 	// Página estática; sin datos remotos.
 	import TopBar from "$lib/components/ui/TopBar.svelte";
+	import PageHero from "$lib/components/ui/PageHero.svelte";
 	import { PAGE_META } from "$lib/seo.js";
 </script>
 
@@ -12,14 +13,10 @@
 
 <div class="page">
 	<main>
-		<header class="hero">
-			<p class="eyebrow">Cómo se calcula</p>
-			<h1>Metodología</h1>
-			<p class="lead">
-				Este proyecto representa visualmente los récords de temperatura que cada estación de AEMET
-				ha batido a lo largo del tiempo, con especial foco en los más recientes.
-			</p>
-		</header>
+		<PageHero eyebrow="Cómo se calcula" title="Metodología">
+			Este proyecto representa visualmente los récords de temperatura que cada estación de AEMET ha
+			batido a lo largo del tiempo, con especial foco en los más recientes.
+		</PageHero>
 
 		<section>
 			<h2>Fuente de datos</h2>
@@ -231,36 +228,6 @@
 	main {
 		display: flex;
 		flex-direction: column;
-	}
-
-	/* --- Hero --------------------------------------------------------- */
-	.hero {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1.75rem;
-	}
-	.eyebrow {
-		margin: 0;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: var(--max);
-	}
-	h1 {
-		margin: 0;
-		font-size: clamp(1.9rem, 5vw, 2.7rem);
-		font-weight: 800;
-		line-height: 1.05;
-		letter-spacing: -0.03em;
-		color: var(--ink);
-	}
-	.lead {
-		margin: 0.2rem 0 0;
-		max-width: 62ch;
-		color: var(--muted);
-		font-size: 0.95rem;
 	}
 
 	/* --- Secciones: texto corrido, separadas por un filete sutil. ----- */

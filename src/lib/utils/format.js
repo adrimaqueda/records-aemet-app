@@ -23,28 +23,32 @@ export function fmtTemp(v) {
 	return v == null ? "—" : `${fmtNum(v)} °C`;
 }
 
+/** Subida de un récord sobre el anterior: "+0,3 °C sobre 40,4 °C". */
+export function fmtSubida(valor, anterior) {
+	const d = valor - anterior;
+	return `${d >= 0 ? "+" : "−"}${fmtTemp(Math.abs(d))} sobre ${fmtTemp(anterior)}`;
+}
+
 // Las fechas del dataset son civiles (yyyy-mm-dd); new Date() las interpreta como
 // medianoche UTC. Formateamos también en UTC para que un lector en otra zona
 // horaria (p. ej. América) no vea el día anterior.
+const dateFormat = (opts) => {
+	const f = new Intl.DateTimeFormat("es-ES", { ...opts, timeZone: "UTC" });
+	return (s) => f.format(new Date(s));
+};
 
 /** "2026-06-18" → "18 de junio de 2026". */
-export function fmtDate(s) {
-	return new Date(s).toLocaleDateString("es-ES", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-		timeZone: "UTC",
-	});
-}
+export const fmtDate = dateFormat({ day: "numeric", month: "long", year: "numeric" });
+/** "2026-06-18" → "18 jun 2026". */
+export const fmtDateShort = dateFormat({ day: "numeric", month: "short", year: "numeric" });
+/** "2026-06-18" → "18 jun". */
+export const fmtDayMonth = dateFormat({ day: "numeric", month: "short" });
 
-/** Variante corta: "2026-06-18" → "18 jun 2026". */
-export function fmtDateShort(s) {
-	return new Date(s).toLocaleDateString("es-ES", {
-		day: "numeric",
-		month: "short",
-		year: "numeric",
-		timeZone: "UTC",
-	});
+/** "MADRID, RETIRO" → "Madrid, Retiro". */
+export function capWords(s) {
+	return String(s)
+		.toLowerCase()
+		.replace(/(^|[\s/(.-])\p{L}/gu, (c) => c.toUpperCase());
 }
 
 export function tipoLabel(tipo, mes) {

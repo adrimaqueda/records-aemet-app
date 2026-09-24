@@ -7,8 +7,8 @@ Botones: zoom +, zoom −, reset (vista inicial), alternar entre dos vistas
 (p.ej. península / Canarias).
 
 Props:
-  initialView: { center: [lng, lat], zoom }   — vista por defecto.
-  altView:     { center, zoom, label, short } — vista alternativa.
+  initialView: { center: [lng, lat], zoom, label } — vista por defecto.
+  altView:     { center: [lng, lat], zoom, label } — vista alternativa.
 -->
 <script>
 	import { getContext } from "svelte";
@@ -21,20 +21,14 @@ Props:
 	let onAlt = $state(false);
 
 	// ── Selector de tema del mapa ──────────────────────────────────────────
-	const themes = ctx.themes ?? [];
-	let selectedTheme = $state(ctx.getTheme?.() ?? themes[0]?.id);
 	let themeOpen = $state(false);
 	let themeRoot = $state(null);
 
-	const currentTheme = $derived(themes.find((t) => t.id === selectedTheme) ?? themes[0]);
-	const otherThemes = $derived(themes.filter((t) => t.id !== selectedTheme));
+	const currentTheme = $derived(ctx.themes.find((t) => t.id === ctx.theme));
+	const otherThemes = $derived(ctx.themes.filter((t) => t.id !== ctx.theme));
 
-	function toggleThemes() {
-		themeOpen = !themeOpen;
-	}
 	function pickTheme(id) {
-		selectedTheme = id;
-		ctx.setTheme?.(id);
+		ctx.setTheme(id);
 		themeOpen = false;
 	}
 
@@ -42,37 +36,23 @@ Props:
 	$effect(() => {
 		if (!themeOpen) return;
 		const onDocClick = (e) => {
-			if (themeRoot && !themeRoot.contains(e.target)) themeOpen = false;
+			if (!themeRoot?.contains(e.target)) themeOpen = false;
 		};
 		document.addEventListener("click", onDocClick);
 		return () => document.removeEventListener("click", onDocClick);
 	});
 
-	// Vista de reset = la seleccionada ahora mismo (península o Canarias).
+	// Vista de reset = la seleccionada ahora mismo (península o Canarias);
+	// el otro botón lleva a la contraria.
 	const resetView = $derived(onAlt ? altView : initialView);
+	const otherView = $derived(onAlt ? initialView : altView);
 
-	function mapFly(view) {
-		const map = ctx.getMap();
-		if (!map) return;
-		map.flyTo({
-			center: view.center,
-			zoom: view.zoom,
-			duration: 800,
-			essential: true,
-		});
+	function flyTo(view) {
+		ctx.getMap()?.flyTo({ center: view.center, zoom: view.zoom, duration: 800, essential: true });
 	}
 
-	function zoomIn() {
-		ctx.getMap()?.zoomIn();
-	}
-	function zoomOut() {
-		ctx.getMap()?.zoomOut();
-	}
-	function reset() {
-		mapFly(resetView);
-	}
-	function toggle() {
-		mapFly(onAlt ? initialView : altView);
+	function toggleView() {
+		flyTo(otherView);
 		onAlt = !onAlt;
 	}
 </script>
@@ -135,12 +115,12 @@ Props:
 {/snippet}
 
 <div class="controls">
-	{#if themes.length > 1}
+	{#if ctx.themes.length > 1}
 		<div class="group themes" bind:this={themeRoot}>
 			<button
 				class="swatch current"
 				class:open={themeOpen}
-				onclick={toggleThemes}
+				onclick={() => (themeOpen = !themeOpen)}
 				aria-haspopup="true"
 				aria-expanded={themeOpen}
 				aria-label="Cambiar tema del mapa (actual: {currentTheme.id})"
@@ -169,12 +149,12 @@ Props:
 	{/if}
 
 	<div class="group">
-		<button onclick={zoomIn} aria-label="Acercar" title="Acercar">+</button>
-		<button onclick={zoomOut} aria-label="Alejar" title="Alejar">−</button>
+		<button onclick={() => ctx.getMap()?.zoomIn()} aria-label="Acercar" title="Acercar">+</button>
+		<button onclick={() => ctx.getMap()?.zoomOut()} aria-label="Alejar" title="Alejar">−</button>
 	</div>
 	<div class="group">
 		<button
-			onclick={reset}
+			onclick={() => flyTo(resetView)}
 			aria-label="Restablecer vista ({resetView.label})"
 			title="Restablecer vista"
 		>
@@ -188,15 +168,11 @@ Props:
 		</button>
 	</div>
 	<div class="group">
-		<button
-			onclick={toggle}
-			aria-label="Ir a {onAlt ? initialView.label : altView.label}"
-			title="Ir a {onAlt ? initialView.label : altView.label}"
-		>
-			{#if (onAlt ? initialView.short : altView.short) === "Can"}
-				{@render canIcon()}
-			{:else}
+		<button onclick={toggleView} aria-label="Ir a {otherView.label}" title="Ir a {otherView.label}">
+			{#if onAlt}
 				{@render penIcon()}
+			{:else}
+				{@render canIcon()}
 			{/if}
 		</button>
 	</div>
@@ -221,7 +197,6 @@ Props:
 	.group {
 		display: flex;
 		flex-direction: column;
-		/*background: #fff;*/
 		border: 1px solid #ddd;
 		border-radius: 6px;
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
@@ -305,7 +280,6 @@ Props:
 	@media (max-width: 699px) {
 		.controls {
 			top: auto;
-			transform: none;
 			bottom: 4rem; /* despeja el panel .recientes colapsado, con margen */
 			right: 50%;
 			transform: translateX(50%);

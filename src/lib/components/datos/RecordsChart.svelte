@@ -49,20 +49,21 @@ Props:
 	// visible cubre más años que la de móvil.
 	const minBand = $derived(isMobile.current ? 8 : 16);
 
+	/** Máximo de la escala Y, compartida entre máxima y mínima → comparación justa. */
+	const maxRecords = (data) =>
+		Math.max(
+			1,
+			max(data, (d) => Math.max(d.recordsMax, d.recordsMin)),
+		);
+
 	// Coordenadas locales del área de barras: x arranca en 0 (la canaleta del
 	// eje va aparte), así el mismo dibujo sirve con y sin scroll.
 	function chartGeom(data, plotW) {
 		if (!plotW || data.length === 0) return null;
 		const w = Math.max(0, plotW - MARGIN.right);
 		const h = HEIGHT - MARGIN.top - MARGIN.bottom;
-		const halfH = h / 2;
-		const cy = MARGIN.top + halfH; // línea cero (centro)
-		// Escala compartida entre máxima y mínima → comparación justa.
-		const maxRec = Math.max(
-			1,
-			max(data, (d) => Math.max(d.recordsMax, d.recordsMin)),
-		);
-
+		const cy = MARGIN.top + h / 2; // línea cero (centro)
+		const maxRec = maxRecords(data);
 		// X: escala de banda (una banda por periodo); d3 reparte ancho y separación.
 		const x = scaleBand()
 			.domain(data.map((d) => d.label))
@@ -70,9 +71,10 @@ Props:
 			.paddingInner(data.length > 30 ? 0.08 : 0.18);
 		// Y (magnitud): 0 en el centro, maxRec en cada extremo. La misma escala
 		// sirve para máxima (hacia arriba) y mínima (hacia abajo).
-		const yMag = scaleLinear().domain([0, maxRec]).range([0, halfH]);
-
-		return { w, h, maxRec, halfH, cy, x, yMag, barW: x.bandwidth() };
+		const yMag = scaleLinear()
+			.domain([0, maxRec])
+			.range([0, h / 2]);
+		return { w, h, maxRec, cy, x, yMag, barW: x.bandwidth() };
 	}
 
 	// Geometría compacta del minimapa: la silueta completa sin ejes ni relleno,
@@ -80,27 +82,14 @@ Props:
 	function miniGeom(data, width) {
 		if (!width || data.length === 0) return null;
 		const cy = MINI_H / 2;
-		const maxRec = Math.max(
-			1,
-			max(data, (d) => Math.max(d.recordsMax, d.recordsMin)),
-		);
 		const x = scaleBand()
 			.domain(data.map((d) => d.label))
 			.range([0, width])
 			.paddingInner(0.12);
 		const yMag = scaleLinear()
-			.domain([0, maxRec])
+			.domain([0, maxRecords(data)])
 			.range([0, cy - 2]);
 		return { cy, x, yMag, barW: x.bandwidth() };
-	}
-
-	/** Y para un valor de máxima (por encima del centro). */
-	function yUp(g, v) {
-		return g.cy - g.yMag(v);
-	}
-	/** Y para un valor de mínima (por debajo del centro). */
-	function yDown(g, v) {
-		return g.cy + g.yMag(v);
 	}
 
 	// Altura mínima visible (px) para una barra no nula, sólo en "vigentes": la
@@ -144,9 +133,23 @@ Props:
 		if (!geom || data.length === 0) return 1;
 		return Math.max(1, Math.ceil(48 / (geom.w / data.length)));
 	});
-	// Marcas del eje en valores redondos dentro de [0, maxRec]. Filtramos a
-	// enteros porque son recuentos de récords (sin decimales).
-	const tickRec = $derived(geom ? ticks(0, geom.maxRec, 4).filter(Number.isInteger) : []);
+	// Marcas del eje en valores redondos dentro de [0, maxRec], simétricas
+	// arriba (máxima) y abajo (mínima) del cero. Filtramos a enteros porque son
+	// recuentos (sin decimales).
+	const yTicks = $derived(
+		!geom
+			? []
+			: ticks(0, geom.maxRec, 4)
+					.filter(Number.isInteger)
+					.flatMap((t) =>
+						t === 0
+							? [{ t, y: geom.cy }]
+							: [
+									{ t, y: geom.cy - geom.yMag(t) },
+									{ t, y: geom.cy + geom.yMag(t) },
+								],
+					),
+	);
 
 	// Al cambiar la forma del dataset (vista, rango de años o nº de barras) o al
 	// pasar a modo scroll, encuadra el tramo más reciente (extremo derecho).
@@ -194,19 +197,26 @@ Props:
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
 	}
 	function onMiniKey(e) {
-		if (!scroller) return;
-		const stepPx = scrollVW * 0.25;
-		if (e.key === "ArrowLeft") {
-			scroller.scrollLeft -= stepPx;
-			scrollLeft = scroller.scrollLeft;
-			e.preventDefault();
-		} else if (e.key === "ArrowRight") {
-			scroller.scrollLeft += stepPx;
-			scrollLeft = scroller.scrollLeft;
-			e.preventDefault();
-		}
+		const dir = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+		if (!scroller || !dir) return;
+		e.preventDefault();
+		scroller.scrollLeft += dir * scrollVW * 0.25;
+		scrollLeft = scroller.scrollLeft;
 	}
 </script>
+
+<!-- Detalle de una familia en el tooltip: recuento y, si aplica, el % de
+     estaciones (en vigentes, sobre las del mapa; si no, las que batieron). -->
+{#snippet famDetail(nombre, cls, n, batieron, pct, d)}
+	<span class={cls}>{nombre}: {n.toLocaleString("es-ES")} {unidad}</span>
+	{#if d.estacionesConDatos > 0}
+		{#if esVigentes}
+			({fmtPct(pct)} de {d.estacionesConDatos.toLocaleString("es-ES")} del mapa)
+		{:else}
+			({batieron}/{d.estacionesConDatos} estaciones · {fmtPct(pct)})
+		{/if}
+	{/if}
+{/snippet}
 
 <!-- Tooltip flotante con la barra hover -->
 <div class="info">
@@ -215,28 +225,12 @@ Props:
 		<p class="tooltip">
 			<strong>{d.labelLong}</strong>
 			<span class="tip-sep">·</span>
-			<span class="tip-max">Máx: {d.recordsMax.toLocaleString("es-ES")} {unidad}</span>
-			{#if esVigentes}
-				{#if d.estacionesConDatos > 0}
-					({fmtPct(d.pctMax)} de {d.estacionesConDatos.toLocaleString("es-ES")} del mapa)
-				{/if}
-			{:else if d.estacionesConDatos > 0}
-				({d.estacionesBatieronMax}/{d.estacionesConDatos}
-				estaciones · {fmtPct(d.pctMax)})
-			{/if}
+			{@render famDetail("Máx", "tip-max", d.recordsMax, d.estacionesBatieronMax, d.pctMax, d)}
 			<span class="tip-sep">·</span>
-			<span class="tip-min">Mín: {d.recordsMin.toLocaleString("es-ES")} {unidad}</span>
-			{#if esVigentes}
-				{#if d.estacionesConDatos > 0}
-					({fmtPct(d.pctMin)} de {d.estacionesConDatos.toLocaleString("es-ES")} del mapa)
-				{/if}
-			{:else if d.estacionesConDatos > 0}
-				({d.estacionesBatieronMin}/{d.estacionesConDatos}
-				estaciones · {fmtPct(d.pctMin)})
-			{/if}
+			{@render famDetail("Mín", "tip-min", d.recordsMin, d.estacionesBatieronMin, d.pctMin, d)}
 		</p>
 	{:else if data.length > 0}
-		<p class="muted small" style="margin: 0;">Pasa el ratón sobre una barra para ver el detalle.</p>
+		<p class="hint small muted">Pasa el ratón sobre una barra para ver el detalle.</p>
 	{/if}
 </div>
 
@@ -259,34 +253,11 @@ Props:
 	<div class="chart-body">
 		<!-- Canaleta fija del eje Y: no se desplaza con el scroll. -->
 		<svg class="y-axis" width={AX} height={HEIGHT} viewBox="0 0 {AX} {HEIGHT}" aria-hidden="true">
-			{#if geom}
-				{#each tickRec as t (t)}
-					{#if t === 0}
-						<text x={AX - 6} y={geom.cy} text-anchor="end" dominant-baseline="middle" class="tick">
-							0
-						</text>
-					{:else}
-						<text
-							x={AX - 6}
-							y={yUp(geom, t)}
-							text-anchor="end"
-							dominant-baseline="middle"
-							class="tick"
-						>
-							{t.toLocaleString("es-ES")}
-						</text>
-						<text
-							x={AX - 6}
-							y={yDown(geom, t)}
-							text-anchor="end"
-							dominant-baseline="middle"
-							class="tick"
-						>
-							{t.toLocaleString("es-ES")}
-						</text>
-					{/if}
-				{/each}
-			{/if}
+			{#each yTicks as { t, y }, i (i)}
+				<text x={AX - 6} {y} text-anchor="end" dominant-baseline="middle" class="tick">
+					{t.toLocaleString("es-ES")}
+				</text>
+			{/each}
 		</svg>
 
 		<!-- Área de barras: se desplaza horizontalmente si no caben todas. -->
@@ -301,13 +272,8 @@ Props:
 			>
 				{#if geom}
 					<!-- Rejilla: ticks simétricos arriba/abajo; línea cero al centro. -->
-					{#each tickRec as t (t)}
-						{#if t === 0}
-							<line x1={0} x2={geom.w} y1={geom.cy} y2={geom.cy} stroke="#d9d9d9" />
-						{:else}
-							<line x1={0} x2={geom.w} y1={yUp(geom, t)} y2={yUp(geom, t)} stroke="#eee" />
-							<line x1={0} x2={geom.w} y1={yDown(geom, t)} y2={yDown(geom, t)} stroke="#eee" />
-						{/if}
+					{#each yTicks as { t, y }, i (i)}
+						<line x1={0} x2={geom.w} y1={y} y2={y} stroke={t === 0 ? "#d9d9d9" : "#eee"} />
 					{/each}
 					<!-- Barras divergentes + zona de hover por periodo. -->
 					{#each data as d, i (d.label)}
@@ -567,6 +533,9 @@ Props:
 	}
 	.chart-hint {
 		margin: 0.5rem 0 0;
+	}
+	.hint {
+		margin: 0;
 	}
 	.tick {
 		font-size: 10px;

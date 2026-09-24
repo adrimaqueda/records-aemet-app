@@ -4,11 +4,12 @@
 	import StationsLayer from "$lib/components/map/StationsLayer.svelte";
 	import StationPanel from "$lib/components/map/StationPanel.svelte";
 	import RecientesPanel from "$lib/components/map/RecientesPanel.svelte";
+	import Segmented from "$lib/components/ui/Segmented.svelte";
 	import {
 		fetchStations,
 		fetchStats,
+		FAMILIA_OPCIONES,
 		FAMILIA_SHORT,
-		FAMILIAS,
 		FAMILIA_TIPOS,
 	} from "$lib/data/data.js";
 	import {
@@ -17,14 +18,16 @@
 		aniosConVigentes,
 		vigentesEnAnio,
 	} from "$lib/data/records.js";
-	import { dayNumber, daysSince, relativeFromNow } from "$lib/utils/age.js";
+	import { daysSince, relativeFromNow } from "$lib/utils/age.js";
 	import { PAGE_META } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
+	import { extent } from "d3-array";
 	import { slide } from "svelte/transition";
 
 	let stations = $state([]);
-	let stats = $state(null);
+	/** Fecha de la última actualización del dataset (la publica el pipeline en stats.json). */
+	let ultimaActualizacion = $state(null);
 	let loading = $state(true);
 	let error = $state(null);
 	let familia = $state("max");
@@ -41,39 +44,22 @@
 		center: [-3.7, 40.5],
 		zoom: isMobile.current ? 5.2 : 6,
 		label: "Península",
-		short: "Pen",
 	});
 	const viewCanarias = $derived({
 		center: [-15.5, 28.3],
 		zoom: isMobile.current ? 5.5 : 7,
 		label: "Canarias",
-		short: "Can",
 	});
 
 	$effect(() => {
 		fetchStations()
-			.then((s) => {
-				stations = s;
-				loading = false;
-			})
-			.catch((e) => {
-				error = String(e);
-				loading = false;
-			});
-	});
-
-	$effect(() => {
+			.then((s) => (stations = s))
+			.catch((e) => (error = String(e)))
+			.finally(() => (loading = false));
 		fetchStats()
-			.then((s) => (stats = s))
+			.then((s) => (ultimaActualizacion = s.generadoEn))
 			.catch((e) => console.warn("No se pudo cargar stats.json", e));
 	});
-
-	/** Total de récords batidos en los últimos 15 días para la familia. */
-	function countRecientes(s, fam) {
-		const { absoluto, mensual } = FAMILIA_TIPOS[fam];
-		const r = s.recientes15d ?? {};
-		return (r[absoluto] ?? 0) + (r[mensual] ?? 0);
-	}
 
 	/** Años en los que alguna estación tiene su récord vigente de la familia
 	 *  activa, de más reciente a más antiguo. */
@@ -92,32 +78,19 @@
 		anio == null ? stations : stations.filter((s) => anioDeVigente(s, familia) === anio),
 	);
 
-	function setAnio(v) {
-		anio = v === "" ? null : +v;
-		// La estación abierta puede haber quedado fuera del filtro.
-		selected = null;
-	}
-
 	const geojson = $derived.by(() => {
 		const features = visibles
-			.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
 			.map((s) => {
 				const ult = ultimoVigenteEnFamilia(s, familia);
-				const fecha = ult?.fecha ?? null;
-				const days = daysSince(fecha, now);
 				return {
 					type: "Feature",
 					geometry: { type: "Point", coordinates: [s.lon, s.lat] },
 					properties: {
 						indicativo: s.indicativo,
-						nombre: s.nombre,
 						esMax: familia === "max",
 						esAbsoluto: !!ult?.esAbsoluto,
 						provisional: !!ult?.provisional,
-						fecha,
-						valor: ult?.valor ?? null,
-						daysSinceRecord: days ?? 100000,
-						dayNumber: dayNumber(days),
+						daysSinceRecord: daysSince(ult?.fecha, now) ?? 100000,
 						// Con filtro de año, todas las estaciones mostradas son del mismo
 						// año: la escala de antigüedad deja de informar y la capa pinta
 						// todos los puntos igual.
@@ -138,61 +111,45 @@
 		return { type: "FeatureCollection", features };
 	});
 
-	/** Fecha de la última actualización del dataset (la publica el pipeline en stats.json). */
-	const ultimaActualizacion = $derived(stats?.generadoEn ?? null);
-
-	/** Paleta de la familia activa: tiñe la pill y los puntos de la leyenda con
-	 *  los mismos colores que usa el mapa (vía colorForDays), para que coincidan. */
-	const esMax = $derived(familia === "max");
-	const accent = $derived(esMax ? "var(--max)" : "var(--min)");
+	/** Paleta de la familia activa: tiñe los puntos de la leyenda con los mismos
+	 *  colores que usa el mapa (vía colorForDays), para que coincidan. */
 	const legendColors = $derived({
-		fresh: colorForDays(esMax, 0),
-		year: colorForDays(esMax, 90),
-		old: colorForDays(esMax, 3000),
+		fresh: colorForDays(familia === "max", 0),
+		year: colorForDays(familia === "max", 90),
+		old: colorForDays(familia === "max", 3000),
 	});
 
-	/** Lista de estaciones con al menos un récord en los últimos 15 días para la familia. */
-	const recientes = $derived(
-		stations
-			.map((s) => {
-				const ult = ultimoVigenteEnFamilia(s, familia);
-				const n = countRecientes(s, familia);
-				return { s, ult, n };
-			})
-			.filter((x) => x.n > 0 && x.ult)
-			.sort(
-				(a, b) =>
-					new Date(b.ult.fecha).getTime() - new Date(a.ult.fecha).getTime() ||
-					b.ult.valor - a.ult.valor ||
-					a.s.nombre.localeCompare(b.s.nombre, "es"),
-			),
-	);
+	/** Total de récords batidos en los últimos 15 días para la familia. */
+	function countRecientes(s) {
+		const { absoluto, mensual } = FAMILIA_TIPOS[familia];
+		return (s.recientes15d?.[absoluto] ?? 0) + (s.recientes15d?.[mensual] ?? 0);
+	}
 
-	/** Lo que lista el panel flotante: los récords de los últimos 15 días o, con
-	 *  el filtro activo, todas las estaciones cuyo récord vigente es de ese año. */
-	const panelItems = $derived.by(() => {
-		if (anio == null) return recientes;
-		return visibles
+	/** Lo que lista el panel flotante: las estaciones con algún récord en los
+	 *  últimos 15 días o, con el filtro de año, todas las de ese año. `n` es lo
+	 *  que cuenta el badge ×N de cada fila. Más recientes primero. */
+	const panelItems = $derived(
+		visibles
 			.map((s) => ({
 				s,
 				ult: ultimoVigenteEnFamilia(s, familia),
-				n: vigentesEnAnio(s, familia, anio),
+				n: anio == null ? countRecientes(s) : vigentesEnAnio(s, familia, anio),
 			}))
-			.filter((x) => x.ult)
+			.filter((x) => x.ult && (anio != null || x.n > 0))
 			.sort(
 				(a, b) =>
 					b.ult.fecha.localeCompare(a.ult.fecha) ||
 					b.ult.valor - a.ult.valor ||
 					a.s.nombre.localeCompare(b.s.nombre, "es"),
-			);
-	});
+			),
+	);
 	const panelTitulo = $derived(anio == null ? "Récords recientes" : `Récords vigentes de ${anio}`);
 	/** Explica el badge ×N del panel: su significado depende del modo (récords
 	 *  recientes vs. filtro de año), así que el texto se decide aquí. */
 	const panelBadgeLabel = $derived(
 		anio == null
 			? (n) => `${n} récords batidos en los últimos 15 días`
-			: (n) => `La estación fijó su récord absoluto y su récord mensual en ${anio}`,
+			: () => `La estación fijó su récord absoluto y su récord mensual en ${anio}`,
 	);
 
 	/** Margen "seguro" en px alrededor del mapa, dentro del cual un punto se
@@ -207,20 +164,6 @@
 			: { top: 20, right: 90, bottom: 20, left: 370 };
 	}
 
-	/** Clampea el padding para que nunca llegue a igualar/superar las
-	 *  dimensiones del contenedor: MapLibre lanza si left+right >= width (o
-	 *  top+bottom >= height) en `fitBounds`. */
-	function clampPadding(margin, width, height) {
-		const maxH = Math.max(0, width / 2 - 1);
-		const maxV = Math.max(0, height / 2 - 1);
-		return {
-			top: Math.min(margin.top, maxV),
-			bottom: Math.min(margin.bottom, maxV),
-			left: Math.min(margin.left, maxH),
-			right: Math.min(margin.right, maxH),
-		};
-	}
-
 	// Si el año filtrado deja todas las estaciones fuera de lo que se ve de
 	// verdad (tapadas por la HUD/panel o directamente fuera del viewport),
 	// el mapa parece vacío aunque el filtro funcione. Encuadramos sobre los
@@ -232,44 +175,34 @@
 	$effect(() => {
 		if (anio == null || !mapRef || visibles.length === 0) return;
 
-		const pts = visibles
-			.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
-			.map((s) => [s.lon, s.lat]);
-		if (pts.length === 0) return;
+		const { width, height } = mapRef.getContainer().getBoundingClientRect();
+		if (width === 0 || height === 0) return;
 
-		const rect = mapRef.getContainer().getBoundingClientRect();
-		if (rect.width === 0 || rect.height === 0) return;
-
-		const margin = safeMargin();
-		const anyVisible = pts.some(([lon, lat]) => {
-			const p = mapRef.project([lon, lat]);
-			return (
-				p.x >= margin.left &&
-				p.x <= rect.width - margin.right &&
-				p.y >= margin.top &&
-				p.y <= rect.height - margin.bottom
-			);
+		const m = safeMargin();
+		const anyVisible = visibles.some((s) => {
+			const p = mapRef.project([s.lon, s.lat]);
+			return p.x >= m.left && p.x <= width - m.right && p.y >= m.top && p.y <= height - m.bottom;
 		});
 		if (anyVisible) return;
 
-		let minLon = Infinity;
-		let maxLon = -Infinity;
-		let minLat = Infinity;
-		let maxLat = -Infinity;
-		for (const [lon, lat] of pts) {
-			if (lon < minLon) minLon = lon;
-			if (lon > maxLon) maxLon = lon;
-			if (lat < minLat) minLat = lat;
-			if (lat > maxLat) maxLat = lat;
-		}
-
+		const [minLon, maxLon] = extent(visibles, (s) => s.lon);
+		const [minLat, maxLat] = extent(visibles, (s) => s.lat);
+		// El padding nunca puede igualar/superar el contenedor: MapLibre lanza
+		// en `fitBounds` si left+right >= width (o top+bottom >= height).
+		const maxH = Math.max(0, width / 2 - 1);
+		const maxV = Math.max(0, height / 2 - 1);
 		mapRef.fitBounds(
 			[
 				[minLon, minLat],
 				[maxLon, maxLat],
 			],
 			{
-				padding: clampPadding(margin, rect.width, rect.height),
+				padding: {
+					top: Math.min(m.top, maxV),
+					bottom: Math.min(m.bottom, maxV),
+					left: Math.min(m.left, maxH),
+					right: Math.min(m.right, maxH),
+				},
 				// Un año con una única estación (p.ej. Canarias) debe encuadrar la
 				// isla/región, no lanzarse a zoom de calle sobre el punto.
 				maxZoom: 8,
@@ -279,24 +212,15 @@
 		);
 	});
 
-	function focusStation(s) {
-		// Recupera la estación completa (de stations[]) si nos pasan solo {indicativo,…}
-		const full = stations.find((x) => x.indicativo === s.indicativo) ?? s;
-		const ult = ultimoVigenteEnFamilia(full, familia);
-		const days = daysSince(ult?.fecha, now);
-		// Con filtro de año el mapa pinta todos los puntos con el color vivo de la
-		// familia: el borde del panel tiene que coincidir con lo que se ve.
+	function focusStation(indicativo) {
+		const s = stations.find((x) => x.indicativo === indicativo);
+		if (!s) return;
+		const days = daysSince(ultimoVigenteEnFamilia(s, familia)?.fecha, now);
+		// El borde del panel coincide con el color del marcador: con filtro de
+		// año el mapa pinta todos los puntos con el color vivo de la familia.
 		const color = colorForDays(familia === "max", anio == null ? days : 0);
-
-		selected = { indicativo: s.indicativo, color };
-		if (mapRef) {
-			mapRef.flyTo({
-				center: [s.lon, s.lat - 0.015],
-				zoom: 12,
-				duration: 900,
-				essential: true,
-			});
-		}
+		selected = { indicativo, color };
+		mapRef?.flyTo({ center: [s.lon, s.lat - 0.015], zoom: 12, duration: 900, essential: true });
 	}
 </script>
 
@@ -321,19 +245,9 @@
 				longitude={viewPeninsula.center[0]}
 				latitude={viewPeninsula.center[1]}
 				zoom={viewPeninsula.zoom}
-				fill
-				credit="© OpenFreeMap · © OSM · datos: AEMET vía datania"
 				onReady={(m) => (mapRef = m)}
 			>
-				<StationsLayer
-					data={geojson}
-					onClick={(f) =>
-						focusStation({
-							indicativo: f.properties.indicativo,
-							lon: f.geometry.coordinates[0],
-							lat: f.geometry.coordinates[1],
-						})}
-				/>
+				<StationsLayer data={geojson} onClick={focusStation} />
 				<MapControls initialView={viewPeninsula} altView={viewCanarias} />
 			</Map>
 		</div>
@@ -342,7 +256,10 @@
 	<header
 		class="hud"
 		class:collapsed={!hudExpanded}
-		style="--accent: {accent}; --c-fresh: {legendColors.fresh}; --c-year: {legendColors.year}; --c-old: {legendColors.old}"
+		style:--seg-accent="var(--{familia})"
+		style:--c-fresh={legendColors.fresh}
+		style:--c-year={legendColors.year}
+		style:--c-old={legendColors.old}
 	>
 		<div class="title-row">
 			<h1>¿Cuándo se ha batido el último récord de temperatura?</h1>
@@ -365,19 +282,18 @@
 				</svg>
 			</button>
 		</div>
-		<div
-			class="filter"
-			role="group"
-			aria-label="Familia de récord"
-			style="--n: {FAMILIAS.length}; --i: {FAMILIAS.indexOf(familia)}"
-		>
-			<span class="pill" aria-hidden="true"></span>
-			{#each FAMILIAS as f (f)}
-				<button class:active={familia === f} onclick={() => ((familia = f), (selected = null))}>
-					{FAMILIA_SHORT[f]}
-				</button>
-			{/each}
-		</div>
+		<Segmented
+			options={FAMILIA_OPCIONES}
+			bind:value={
+				() => familia,
+				(v) => {
+					familia = v;
+					selected = null;
+				}
+			}
+			label="Familia de récord"
+			full
+		/>
 		<!-- Filtro de año: deja en el mapa solo las estaciones cuyo récord vigente
 		     (el que sigue en pie hoy) se fijó en ese año. -->
 		<div class="year-filter">
@@ -385,7 +301,11 @@
 			<select
 				id="filtro-anio"
 				value={anio == null ? "" : String(anio)}
-				onchange={(e) => setAnio(e.currentTarget.value)}
+				onchange={(e) => {
+					anio = e.currentTarget.value === "" ? null : +e.currentTarget.value;
+					// La estación abierta puede haber quedado fuera del filtro.
+					selected = null;
+				}}
 				disabled={aniosOpts.length === 0}
 			>
 				<option value="">Cualquier año</option>
@@ -490,9 +410,9 @@
 	</header>
 
 	<RecientesPanel
-		recientes={panelItems}
+		items={panelItems}
 		titulo={panelTitulo}
-		onSelect={focusStation}
+		onSelect={(s) => focusStation(s.indicativo)}
 		{selected}
 		badgeLabel={panelBadgeLabel}
 	/>
@@ -527,6 +447,15 @@
 		padding: 0.85rem 1rem;
 		border-radius: var(--radius);
 		box-shadow: var(--shadow);
+	}
+	/* Desktop: la HUD se compacta a la esquina superior izquierda. */
+	@media (min-width: 700px) {
+		.hud {
+			top: 1rem;
+			left: 1rem;
+			right: auto;
+			max-width: 340px;
+		}
 	}
 	.title-row {
 		display: flex;
@@ -571,51 +500,6 @@
 	.hud:not(.collapsed) .caret {
 		transform: rotate(180deg);
 	}
-	.filter {
-		position: relative;
-		display: flex;
-		gap: 0;
-		padding: 3px;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background: var(--surface);
-	}
-	/* Pastilla que se desliza bajo la opción activa. */
-	.pill {
-		position: absolute;
-		top: 3px;
-		left: 3px;
-		bottom: 3px;
-		width: calc((100% - 6px) / var(--n));
-		background: var(--accent, var(--ink));
-		border-radius: 999px;
-		transform: translateX(calc(var(--i) * 100%));
-		transition:
-			transform 0.32s cubic-bezier(0.34, 1.3, 0.5, 1),
-			background-color 0.25s ease;
-	}
-	.filter button {
-		position: relative;
-		z-index: 1;
-		flex: 1 1 0;
-		border: none;
-		background: none;
-		border-radius: 999px;
-		padding: 0.4rem 0.6rem;
-		cursor: pointer;
-		font: inherit;
-		font-size: 0.85rem;
-		font-weight: 500;
-		color: var(--muted);
-		transition: color 0.18s ease;
-	}
-	.filter button:hover {
-		color: var(--ink);
-	}
-	.filter button.active {
-		color: #fff;
-	}
-	/* Filtro de año: mismo lenguaje visual que los selectores de /datos. */
 	.year-filter {
 		display: flex;
 		align-items: center;
@@ -633,26 +517,6 @@
 	.year-filter select {
 		flex: 1 1 auto;
 		min-width: 0;
-		font: inherit;
-		font-size: 0.8rem;
-		padding: 0.3rem 1.7rem 0.3rem 0.7rem;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background-color: var(--surface);
-		color: var(--ink);
-		cursor: pointer;
-		appearance: none;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c6c70' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-		background-repeat: no-repeat;
-		background-position: right 0.6rem center;
-		transition: border-color 0.15s ease;
-	}
-	.year-filter select:hover {
-		border-color: var(--muted);
-	}
-	.year-filter select:disabled {
-		opacity: 0.6;
-		cursor: default;
 	}
 
 	.extra {
@@ -685,7 +549,6 @@
 		display: inline-block;
 		transform: rotate(45deg);
 	}
-
 	.nav-links a:hover {
 		text-decoration: underline;
 	}
@@ -710,15 +573,6 @@
 		color: var(--muted);
 	}
 
-	/* Desktop: la HUD se compacta a la esquina superior izquierda. */
-	@media (min-width: 700px) {
-		.hud {
-			top: 1rem;
-			left: 1rem;
-			right: auto;
-			max-width: 340px;
-		}
-	}
 	.legend summary {
 		cursor: pointer;
 		color: var(--muted);
@@ -753,6 +607,7 @@
 		position: relative;
 		border-radius: 50%;
 		border: 1px solid #1a1a1a;
+		transition: background-color 0.25s ease;
 	}
 	.size-fresh {
 		width: 12px;
@@ -781,17 +636,14 @@
 		border: 1.2px solid #1a1a1a;
 		background: rgba(255, 255, 255, 0.6);
 	}
-	.dot {
-		transition: background-color 0.25s ease;
-	}
 	.dot-fresh {
-		background: var(--c-fresh, hsl(10 95% 50%));
+		background: var(--c-fresh);
 	}
 	.dot-year {
-		background: var(--c-year, hsl(10 40% 65%));
+		background: var(--c-year);
 	}
 	.dot-old {
-		background: var(--c-old, hsl(0 0% 82%));
+		background: var(--c-old);
 	}
 	.prov-chip {
 		display: grid;
@@ -799,7 +651,7 @@
 		width: 14px;
 		height: 14px;
 		border-radius: 50%;
-		background: var(--c-fresh, hsl(10 95% 50%));
+		background: var(--c-fresh);
 		transition: background-color 0.25s ease;
 		color: #fff;
 		font-size: 0.72rem;
@@ -827,24 +679,7 @@
 		color: var(--faint);
 		font-size: 0.85rem;
 	}
-	.spinner {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		border: 2.5px solid var(--line-strong);
-		border-top-color: var(--max);
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
 	@media (prefers-reduced-motion: reduce) {
-		.spinner {
-			animation-duration: 2s;
-		}
-		.pill,
 		.caret {
 			transition: none;
 		}

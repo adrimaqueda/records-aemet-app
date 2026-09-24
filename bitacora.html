@@ -172,6 +172,52 @@
     <!-- NUEVA_ENTRADA_AQUI -->
     <article class="entrada">
       <div class="entrada-cabecera">
+        <span class="etiqueta etiqueta-refactor">Refactor</span>
+        <time>2026-09-24</time>
+      </div>
+      <h2>Limpieza general del código: menos piezas repetidas y nada muerto</h2>
+      <p class="resumen">La web hace lo mismo que antes, pero con unas 730 líneas menos y cada pieza definida en un único sitio.</p>
+      <section>
+        <h3>Qué se hizo</h3>
+        <p>Revisé la app entera buscando dos cosas: código que ya no se usaba y código copiado en varios sitios.</p>
+        <p>Lo que sobraba: una variante del mapa &quot;con pie de foto&quot; que ningún mapa usaba, funciones y campos de datos que nadie leía (por ejemplo, datos que se calculaban para cada punto del mapa y la capa nunca consultaba) y comentarios que hablaban de piezas que ya no existen.</p>
+        <p>Lo repetido: el selector con la píldora que se desliza (Máxima/Mínima, Año a año/Mes a mes/Vigentes, etc.) estaba escrito a mano cinco veces; ahora es un solo componente. Lo mismo con la cabecera de /datos y /metodología, los desplegables, el indicador de carga y la etiqueta &quot;provisional&quot;. El formateo de fechas, números y nombres de provincia, que tenía varias versiones ligeramente distintas (la tarjeta para redes usaba una, el SEO otra), ahora sale de un único archivo.</p>
+        <p>Para asegurarme de que nada cambiaba, comparé las funciones de cálculo antiguas con las nuevas sobre los datos reales de las 833 estaciones (colores, edades de los récords, años de récords vigentes…) y dieron exactamente lo mismo. Después recorrí a mano el mapa, la ficha de estación, /datos y /metodología en escritorio y móvil.</p>
+      </section>
+      <section>
+        <h3>Por qué se hizo así</h3>
+        <p>Cuando algo está copiado cinco veces, cualquier retoque hay que hacerlo cinco veces y es fácil olvidar una. Tener cada pieza en un solo sitio hace que un cambio futuro (un color, un tamaño, una regla de formato) se haga una vez y se vea igual en toda la web. Preferí cambios pequeños y comprobables, sin tocar el diseño ni la forma de trabajar de la app, para que el riesgo fuera mínimo.</p>
+      </section>
+      <section>
+        <h3>Otras opciones que se descartaron</h3>
+        <ul class="alternativas">
+          <li><span class="opcion">Reescribir la app desde cero con una estructura nueva:</span> Mucho más riesgo para el mismo resultado visible; la organización actual (mapa, ficha, datos) ya es razonable.</li>
+          <li><span class="opcion">Añadir una librería de componentes para los selectores y desplegables:</span> Traería mucho más código del que ahorra; bastaba con un componente propio de 100 líneas.</li>
+          <li><span class="opcion">Dejar el código muerto &quot;por si acaso&quot;:</span> Confunde a quien lee el código y sigue en el historial de git si algún día hiciera falta.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Qué cambia</h3>
+        <p>Quien visita la web no debería notar nada, salvo tres detalles: las provincias de las clasificaciones se ven como &quot;Cordoba&quot; en vez de &quot;CORDOBA&quot;; el título de la pestaña en la ficha de estación coincide ya con el que ven los buscadores; y la paginación del listado del mapa avanza de 10 en 10 (antes la última página repetía estaciones de la anterior). Para quien mantiene el proyecto: menos archivos que tocar por cambio y cero avisos del comprobador de Svelte (antes había un error y dos avisos).</p>
+      </section>
+      <details class="archivos">
+        <summary>Archivos afectados</summary>
+        <ul>
+          <li><code>src/lib/components/ui/Segmented.svelte</code></li>
+          <li><code>src/lib/components/ui/PageHero.svelte</code></li>
+          <li><code>src/lib/utils/format.js</code></li>
+          <li><code>src/lib/data/data.js</code></li>
+          <li><code>src/lib/data/records.js</code></li>
+          <li><code>src/lib/components/map/Map.svelte</code></li>
+          <li><code>src/lib/components/map/StationsLayer.svelte</code></li>
+          <li><code>src/routes/+page.svelte</code></li>
+          <li><code>src/routes/datos/+page.svelte</code></li>
+          <li><code>src/routes/+layout.svelte</code></li>
+        </ul>
+      </details>
+    </article>
+    <article class="entrada">
+      <div class="entrada-cabecera">
         <span class="etiqueta etiqueta-feature">Nueva funcionalidad</span>
         <time>2026-08-19</time>
       </div>

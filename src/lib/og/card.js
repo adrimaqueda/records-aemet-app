@@ -6,6 +6,8 @@
 // base (static/og/basemap.png), reconstruidas del mismo pipeline que generó las
 // siluetas. Si se regenera el basemap con otros transforms, actualizar BASEMAP.
 
+import { capWords, fmtTemp } from "$lib/utils/format.js";
+
 const GEO = {
 	K_PEN: 0.766044443118978,
 	K_CAN: 0.880477353509162,
@@ -18,8 +20,8 @@ const GEO = {
 	PAD: 3,
 };
 const BASEMAP = { Tm: { tx: 20, ty: 15, s: 5.2 }, Tc: { tx: 35, ty: 410, s: 1.85 } };
-const MAP_LEFT = 600,
-	MAP_TOP = 65;
+const MAP_LEFT = 600;
+const MAP_TOP = 65;
 
 /** Píxel (en el lienzo 1200×630) donde resaltar la estación, a partir de lat/lon. */
 export function highlightPx(lat, lon) {
@@ -41,22 +43,10 @@ const h = (type, props = {}, ...children) => ({
 	type,
 	props: { ...props, children: children.length <= 1 ? children[0] : children },
 });
-const nf = (v) =>
-	typeof v === "number"
-		? v.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-		: v;
-const year = (f) => (f && /^\d{4}/.test(f) ? f.slice(0, 4) : "");
-const capWords = (s) =>
-	s
-		.toLowerCase()
-		.split(" ")
-		.map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-		.join(" ");
-
-function stat(label, valor, fecha) {
+function stat(label, valor, fecha, style = {}) {
 	return h(
 		"div",
-		{ style: { display: "flex", flexDirection: "column" } },
+		{ style: { display: "flex", flexDirection: "column", ...style } },
 		h(
 			"div",
 			{ style: { fontSize: 17, letterSpacing: 1, color: "#9a9a9e", textTransform: "uppercase" } },
@@ -65,13 +55,9 @@ function stat(label, valor, fecha) {
 		h(
 			"div",
 			{ style: { display: "flex", alignItems: "baseline", marginTop: 4 } },
-			h(
-				"div",
-				{ style: { fontSize: 44, fontWeight: 700, color: "#18181A" } },
-				valor == null ? "—" : `${nf(valor)} °C`,
-			),
+			h("div", { style: { fontSize: 44, fontWeight: 700, color: "#18181A" } }, fmtTemp(valor)),
 			fecha
-				? h("div", { style: { fontSize: 19, color: "#b6b6ba", marginLeft: 10 } }, year(fecha))
+				? h("div", { style: { fontSize: 19, color: "#b6b6ba", marginLeft: 10 } }, fecha.slice(0, 4))
 				: "",
 		),
 	);
@@ -82,8 +68,8 @@ export function ogElement(st, basemapSrc, hl) {
 	const nombre = (st.nombre || "Estación").replace(/\s+/g, " ").trim();
 	const nameSize = nombre.length > 26 ? 44 : nombre.length > 18 ? 54 : 64;
 	const prov = st.provincia ? capWords(st.provincia) : "";
-	const max = st.vigentes?.absolutoMax,
-		min = st.vigentes?.absolutoMin;
+	const max = st.vigentes?.absolutoMax;
+	const min = st.vigentes?.absolutoMin;
 
 	const children = [
 		h("div", {
@@ -175,12 +161,8 @@ export function ogElement(st, basemapSrc, hl) {
 			h(
 				"div",
 				{ style: { display: "flex", flexDirection: "row", marginTop: 34 } },
-				h(
-					"div",
-					{ style: { display: "flex", marginRight: 44 } },
-					stat("Día más caluroso", max?.valor, max?.fecha),
-				),
-				h("div", { style: { display: "flex" } }, stat("Noche más cálida", min?.valor, min?.fecha)),
+				stat("Día más caluroso", max?.valor, max?.fecha, { marginRight: 44 }),
+				stat("Noche más cálida", min?.valor, min?.fecha),
 			),
 		),
 		h(

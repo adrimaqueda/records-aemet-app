@@ -14,9 +14,10 @@ Es autocontenido: si `rankings.json` aún no está publicado (404), se oculta
 silenciosamente para no romper la página.
 -->
 <script>
-	import { fetchRankings } from "$lib/data/data.js";
-	import { fmtDateShort, fmtNum, fmtTemp, MESES } from "$lib/utils/format.js";
+	import { fetchRankings, FAMILIA_OPCIONES } from "$lib/data/data.js";
+	import { capWords, fmtDateShort, fmtTemp, MESES } from "$lib/utils/format.js";
 	import { daysSince, ageLongLabel } from "$lib/utils/age.js";
+	import Segmented from "$lib/components/ui/Segmented.svelte";
 	import { flip } from "svelte/animate";
 	import { fly } from "svelte/transition";
 
@@ -36,22 +37,11 @@ silenciosamente para no romper la página.
 	let longFam = $state("max");
 	let actPeriodo = $state("esteAnio"); // 'esteAnio' | 'ultimos12m'
 
-	// --- formato --------------------------------------------------------
-	function fmtDelta(v) {
-		return v == null ? "" : `+${fmtNum(v)}`;
-	}
-	function anyo(s) {
-		return s ? s.slice(0, 4) : "";
-	}
-
-	/** Familia (para color de la cifra): 'max' = máxima · 'min' = mínima. */
-	function famOf(tipo) {
-		return tipo.endsWith("min") ? "min" : "max";
-	}
+	const anyo = (fecha) => fecha.slice(0, 4);
+	/** Familia (para color de la cifra) a partir del tipo: "absoluto-max" → "max". */
+	const famOf = (tipo) => tipo.split("-")[1];
 	/** ¿El récord batido es absoluto (vs. mensual)? Marca el fondo de la cifra. */
-	function esAbs(tipo) {
-		return tipo.startsWith("absoluto");
-	}
+	const esAbs = (tipo) => tipo.startsWith("absoluto");
 
 	// --- derivaciones ---------------------------------------------------
 	const topRows = $derived(
@@ -71,6 +61,13 @@ silenciosamente para no romper la página.
 			</p>
 		</header>
 
+		{#snippet estacion(r)}
+			<td>
+				<a href="/estacion/{r.ind}">{r.nombre}</a>
+				<span class="prov">{capWords(r.prov)}</span>
+			</td>
+		{/snippet}
+
 		{#snippet leyendaFondo()}
 			<p class="card-leg">
 				<span class="fig abs max">con fondo</span>
@@ -85,15 +82,11 @@ silenciosamente para no romper la página.
 			<div class="card-head">
 				<h3>Estaciones con el récord más alto</h3>
 				<div class="ctrls">
-					<div class="seg" style:--i={topFam === "max" ? 0 : 1} role="group" aria-label="Familia">
-						<span class="seg-pill" aria-hidden="true"></span>
-						<button class:active={topFam === "max"} onclick={() => (topFam = "max")}>Máxima</button>
-						<button class:active={topFam === "min"} onclick={() => (topFam = "min")}>Mínima</button>
-					</div>
+					<Segmented options={FAMILIA_OPCIONES} bind:value={topFam} label="Familia" small />
 					<select bind:value={topMes} aria-label="Periodo">
 						<option value={0}>Récord absoluto</option>
-						{#each Array(12) as _, m (m)}
-							<option value={m + 1}>{MESES[m + 1]}</option>
+						{#each MESES.slice(1) as nombre, i (i)}
+							<option value={i + 1}>{nombre}</option>
 						{/each}
 					</select>
 				</div>
@@ -120,10 +113,7 @@ silenciosamente para no romper la página.
 						{#each topRows as r, i (r.ind)}
 							<tr animate:flip={{ duration: 300 }} in:fly={{ duration: 300, y: 300 }}>
 								<td class="num">{i + 1}</td>
-								<td>
-									<a href="/estacion/{r.ind}">{r.nombre}</a>
-									<span class="prov">{r.prov}</span>
-								</td>
+								{@render estacion(r)}
 								<td class="r">
 									<span class="fig {topFam}" class:abs={topMes === 0 || r.abs}>
 										{fmtTemp(r.valor)}
@@ -160,10 +150,7 @@ silenciosamente para no romper la página.
 						<tbody>
 							{#each rk.recientes as r, i (r.ind + "-" + r.fecha + "-" + i)}
 								<tr>
-									<td>
-										<a href="/estacion/{r.ind}">{r.nombre}</a>
-										<span class="prov">{r.prov}</span>
-									</td>
+									{@render estacion(r)}
 									<td class="r">
 										<span class="fig {famOf(r.tipo)}" class:abs={esAbs(r.tipo)}>
 											{fmtTemp(r.valor)}
@@ -185,20 +172,7 @@ silenciosamente para no romper la página.
 				<div class="card-head">
 					<h3>Récords más longevos</h3>
 					<div class="ctrls">
-						<div
-							class="seg"
-							style:--i={longFam === "max" ? 0 : 1}
-							role="group"
-							aria-label="Familia"
-						>
-							<span class="seg-pill" aria-hidden="true"></span>
-							<button class:active={longFam === "max"} onclick={() => (longFam = "max")}>
-								Máxima
-							</button>
-							<button class:active={longFam === "min"} onclick={() => (longFam = "min")}>
-								Mínima
-							</button>
-						</div>
+						<Segmented options={FAMILIA_OPCIONES} bind:value={longFam} label="Familia" small />
 					</div>
 				</div>
 				<p class="card-sub muted">
@@ -218,10 +192,7 @@ silenciosamente para no romper la página.
 							{#each longRows as r, i (r.ind)}
 								<tr animate:flip={{ duration: 300 }} in:fly={{ duration: 300, y: 300 }}>
 									<td class="num">{i + 1}</td>
-									<td>
-										<a href="/estacion/{r.ind}">{r.nombre}</a>
-										<span class="prov">{r.prov}</span>
-									</td>
+									{@render estacion(r)}
 									<td class="r">
 										<span class="fig {longFam} abs">{fmtTemp(r.valor)}</span>
 									</td>
@@ -258,12 +229,9 @@ silenciosamente para no romper la página.
 							{#each rk.mayorSalto as r, i (r.ind + "-" + r.fecha + "-" + i)}
 								<tr>
 									<td class="num">{i + 1}</td>
-									<td>
-										<a href="/estacion/{r.ind}">{r.nombre}</a>
-										<span class="prov">{r.prov}</span>
-									</td>
+									{@render estacion(r)}
 									<td class="r">
-										<span class="fig {famOf(r.tipo)} abs">{fmtDelta(r.salto)} °C</span>
+										<span class="fig {famOf(r.tipo)} abs">+{fmtTemp(r.salto)}</span>
 									</td>
 									<td class="r hide-sm fecha">
 										{fmtTemp(r.valorAnterior)} → {fmtTemp(r.valor)}
@@ -281,26 +249,15 @@ silenciosamente para no romper la página.
 				<div class="card-head">
 					<h3>Las que más récords baten</h3>
 					<div class="ctrls">
-						<div
-							class="seg wide"
-							style:--i={actPeriodo === "esteAnio" ? 0 : 1}
-							role="group"
-							aria-label="Periodo"
-						>
-							<span class="seg-pill" aria-hidden="true"></span>
-							<button
-								class:active={actPeriodo === "esteAnio"}
-								onclick={() => (actPeriodo = "esteAnio")}
-							>
-								{rk.masActivas.anio}
-							</button>
-							<button
-								class:active={actPeriodo === "ultimos12m"}
-								onclick={() => (actPeriodo = "ultimos12m")}
-							>
-								12 meses
-							</button>
-						</div>
+						<Segmented
+							options={[
+								{ id: "esteAnio", label: String(rk.masActivas.anio) },
+								{ id: "ultimos12m", label: "12 meses" },
+							]}
+							bind:value={actPeriodo}
+							label="Periodo"
+							small
+						/>
 					</div>
 				</div>
 				<p class="card-sub muted">
@@ -320,10 +277,7 @@ silenciosamente para no romper la página.
 							{#each actRows as r, i (r.ind)}
 								<tr animate:flip={{ duration: 300 }} in:fly={{ duration: 300, y: 300 }}>
 									<td class="num">{i + 1}</td>
-									<td>
-										<a href="/estacion/{r.ind}">{r.nombre}</a>
-										<span class="prov">{r.prov}</span>
-									</td>
+									{@render estacion(r)}
 									<td class="r val-n">{r.n}</td>
 								</tr>
 							{/each}
@@ -401,78 +355,6 @@ silenciosamente para no romper la página.
 		gap: 0.5rem;
 	}
 
-	/* Segmentado máx/mín (mismo lenguaje que la HUD del mapa). */
-	.seg {
-		position: relative;
-		display: inline-grid;
-		grid-auto-flow: column;
-		grid-auto-columns: 1fr;
-		gap: 2px;
-		padding: 3px;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background: var(--surface);
-	}
-	.seg-pill {
-		position: absolute;
-		top: 3px;
-		bottom: 3px;
-		left: 3px;
-		width: calc(50% - 4px);
-		border-radius: 999px;
-		background: var(--ink);
-		transform: translateX(calc(var(--i, 0) * (100% + 2px)));
-		transition: transform 0.26s cubic-bezier(0.34, 1.2, 0.42, 1);
-		pointer-events: none;
-	}
-	.seg button {
-		position: relative;
-		z-index: 1;
-		background: none;
-		border: none;
-		padding: 0.3rem 0.7rem;
-		cursor: pointer;
-		font: inherit;
-		font-size: 0.78rem;
-		font-weight: 500;
-		color: var(--muted);
-		border-radius: 999px;
-		transition: color 0.2s ease;
-		white-space: nowrap;
-	}
-	.seg.wide button {
-		padding: 0.3rem 0.6rem;
-	}
-	.seg button:hover {
-		color: var(--ink);
-	}
-	.seg button.active {
-		color: #fff;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.seg-pill {
-			transition: none;
-		}
-	}
-
-	select {
-		font: inherit;
-		font-size: 0.8rem;
-		padding: 0.35rem 1.8rem 0.35rem 0.7rem;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background-color: var(--surface);
-		color: var(--ink);
-		cursor: pointer;
-		appearance: none;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c6c70' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-		background-repeat: no-repeat;
-		background-position: right 0.6rem center;
-	}
-	select:hover {
-		border-color: var(--muted);
-	}
-
 	/* Tabla */
 	.table-wrap {
 		overflow: hidden;
@@ -528,7 +410,6 @@ silenciosamente para no romper la página.
 		font-size: 0.7rem;
 		color: var(--faint);
 		font-weight: 400;
-		text-transform: capitalize;
 	}
 	/* La cifra es el elemento focal: el color indica la familia (máxima/mínima)
 	   y el fondo distingue récord absoluto (con fondo) de mensual (sin fondo). */

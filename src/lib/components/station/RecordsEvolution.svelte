@@ -15,45 +15,31 @@ el estado "sin datos".
 
 	let { detail } = $props();
 
-	let maxSel = $state("absoluto");
-	let minSel = $state("absoluto");
-
-	/** Filtra los eventos de la estación para una familia y selección. */
-	function filter(fam, sel) {
-		const tipoAbs = fam === "max" ? "absoluto-max" : "absoluto-min";
-		const tipoMes = fam === "max" ? "mensual-max" : "mensual-min";
-		if (sel === "absoluto") {
-			return detail.eventos.filter((e) => e.tipo === tipoAbs);
-		}
-		const mes = Number(sel);
-		return detail.eventos.filter((e) => e.tipo === tipoMes && e.mes === mes);
-	}
-
-	const maxEvents = $derived(filter("max", maxSel));
-	const minEvents = $derived(filter("min", minSel));
-
-	const bloques = $derived([
+	const BLOQUES = [
 		{
-			id: "max",
+			fam: "max",
 			titulo: "Evolución de la máxima",
 			subtitulo: "día más caluroso",
-			getSel: () => maxSel,
-			setSel: (v) => (maxSel = v),
-			events: maxEvents,
 			emptyAbs: "Sin récords absolutos de máxima batidos en esta estación.",
 			emptyMes: (m) => `Sin récords de máxima de ${MESES[m]} todavía.`,
 		},
 		{
-			id: "min",
+			fam: "min",
 			titulo: "Evolución de la mínima",
 			subtitulo: "noche más cálida",
-			getSel: () => minSel,
-			setSel: (v) => (minSel = v),
-			events: minEvents,
 			emptyAbs: 'Sin récords de "noche más cálida" batidos en esta estación.',
 			emptyMes: (m) => `Sin récords de "noche más cálida" de ${MESES[m]} todavía.`,
 		},
-	]);
+	];
+
+	/** Selección de cada bloque: "absoluto" o el número de mes ("1".."12"). */
+	let sel = $state({ max: "absoluto", min: "absoluto" });
+
+	/** Eventos de la estación para una familia y selección. */
+	function eventsFor(fam, s) {
+		if (s === "absoluto") return detail.eventos.filter((e) => e.tipo === `absoluto-${fam}`);
+		return detail.eventos.filter((e) => e.tipo === `mensual-${fam}` && e.mes === +s);
+	}
 </script>
 
 <section class="evolution">
@@ -62,23 +48,24 @@ el estado "sin datos".
 		<p class="caption">
 			Cómo se ha ido superando cada récord a lo largo del tiempo. Cada escalón es una nueva marca;
 			el color del punto indica su antigüedad. Cada vez que hay un periodo largo sin datos <span
-				style="display: inline-block;height: .7lh;width: 2.1cap;background: repeating-linear-gradient(-45deg,#ccc,#ccc 0.1lh,#eee 0.1lh,#eee 0.2lh);"
+				class="gap-swatch"
 			></span>
 			, el valor de referencia se reinicia.
 		</p>
 	</div>
 
 	<div class="blocks">
-		{#each bloques as b (b.id)}
+		{#each BLOQUES as b (b.fam)}
+			{@const events = eventsFor(b.fam, sel[b.fam])}
 			<article class="block">
 				<header>
 					<h3>
 						{b.titulo}
-						<span class="muted small">· {b.subtitulo}</span>
+						<span class="small">· {b.subtitulo}</span>
 					</h3>
-					<label class="picker">
+					<label>
 						<span class="sr-only">Mostrar</span>
-						<select value={b.getSel()} onchange={(e) => b.setSel(e.currentTarget.value)}>
+						<select bind:value={sel[b.fam]}>
 							<option value="absoluto">Récord absoluto</option>
 							{#each MESES.slice(1) as nombre, i (i)}
 								<option value={String(i + 1)}>
@@ -89,12 +76,12 @@ el estado "sin datos".
 					</label>
 				</header>
 
-				{#if b.events.length > 0}
-					<EvolutionChart events={b.events} fam={b.id} sinDatos={detail.sinDatos} />
-					<RecordDetailList events={b.events} fam={b.id} id={b.id} />
+				{#if events.length > 0}
+					<EvolutionChart {events} fam={b.fam} sinDatos={detail.sinDatos} />
+					<RecordDetailList {events} fam={b.fam} />
 				{:else}
-					<p class="muted small empty">
-						{b.getSel() === "absoluto" ? b.emptyAbs : b.emptyMes(Number(b.getSel()))}
+					<p class="small empty">
+						{sel[b.fam] === "absoluto" ? b.emptyAbs : b.emptyMes(+sel[b.fam])}
 					</p>
 				{/if}
 			</article>
@@ -148,31 +135,21 @@ el estado "sin datos".
 		letter-spacing: -0.015em;
 		color: var(--ink);
 	}
-	.muted {
-		color: var(--muted);
-	}
 	.small {
 		font-size: 0.78rem;
 		font-weight: 400;
 		color: var(--faint);
 	}
-	select {
-		font: inherit;
-		font-size: 0.82rem;
-		padding: 0.4rem 1.8rem 0.4rem 0.7rem;
-		border: 1px solid var(--line-strong);
-		border-radius: 999px;
-		background: var(--surface);
-		color: var(--ink);
-		cursor: pointer;
-		appearance: none;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c6c70' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-		background-repeat: no-repeat;
-		background-position: right 0.65rem center;
-		transition: border-color 0.15s ease;
+	/* Muestra del rayado de "sin datos" del gráfico, dentro del texto. */
+	.gap-swatch {
+		display: inline-block;
+		height: 0.7lh;
+		width: 2.1cap;
+		background: repeating-linear-gradient(-45deg, #ccc, #ccc 0.1lh, #eee 0.1lh, #eee 0.2lh);
 	}
-	select:hover {
-		border-color: var(--muted);
+	select {
+		font-size: 0.82rem;
+		padding-block: 0.4rem;
 	}
 	.empty {
 		margin: 0.4rem 0 0;
@@ -181,17 +158,5 @@ el estado "sin datos".
 		border: 1px dashed var(--line-strong);
 		border-radius: var(--radius-sm);
 		text-align: center;
-		color: var(--faint);
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>
