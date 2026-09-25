@@ -33,10 +33,22 @@ export async function handle({ event, resolve }) {
 		ogImage = `${SITE_URL}/estacion/${ind}/og`;
 		meta = { title: `Estación ${ind} · ${SITE_NAME}`, description: DEFAULT_DESCRIPTION };
 		try {
-			const res = await event.fetch(`${DATA_BASE}/stations/${encodeURIComponent(ind)}.json`);
-			if (res.ok) meta = stationMeta(await res.json());
+			// Con tope de tiempo: si HuggingFace va lento, mejor servir la página
+			// con el título genérico que retener la respuesta.
+			const res = await event.fetch(`${DATA_BASE}/stations/${encodeURIComponent(ind)}.json`, {
+				signal: AbortSignal.timeout(2500),
+			});
+			if (res.ok) {
+				meta = stationMeta(await res.json());
+				// El HTML solo cambia con las meta de la estación: que lo guarde el
+				// CDN de Vercel y se ahorre la función (y la ida a HuggingFace) en
+				// cada visita. Solo si salió bien, para no fijar el título genérico.
+				event.setHeaders({
+					"cache-control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400",
+				});
+			}
 		} catch {
-			// sin red o estación desconocida: se queda el título genérico
+			// sin red, timeout o estación desconocida: se queda el título genérico
 		}
 	}
 

@@ -15,6 +15,12 @@ Sobre una única fuente GeoJSON añade 4 capas al mapa padre:
                          sólo aparecen al hacer zoom. Los provisionales llevan
                          un prefijo "~".
 
+  • stations-selected   — bajo el círculo de la estación abierta en el panel:
+                         disco blanco con borde en tinta que la destaca.
+  • stations-pulse      — onda que se expande una vez al llegar a ella.
+
+Props: `data` (GeoJSON), `selected` (indicativo abierto o null), `onClick`.
+
 Propiedades esperadas en cada feature:
   - indicativo (string)      → se devuelve en `onClick`
   - daysSinceRecord (number, grande si no hay)
@@ -32,8 +38,8 @@ Propiedades esperadas en cada feature:
 	import { getContext, onDestroy } from "svelte";
 	import { buildMapboxColorExpr, colorForDays, STOPS_MAX, STOPS_MIN } from "$lib/utils/colors.js";
 
-	/** @type {{ data: any, onClick: (indicativo: string) => void }} */
-	let { data, onClick } = $props();
+	/** @type {{ data: any, selected?: string | null, onClick: (indicativo: string) => void }} */
+	let { data, selected = null, onClick } = $props();
 
 	const ctx = getContext("maplibre-map");
 	if (!ctx) throw new Error("StationsLayer must be placed inside a <Map>.");
@@ -43,7 +49,9 @@ Propiedades esperadas en cada feature:
 	const RING = "stations-abs-ring";
 	const CIRCLE = "stations-circle";
 	const LABEL = "stations-label";
-	const LAYERS = [LABEL, CIRCLE, RING, HALO];
+	const SELECTED = "stations-selected";
+	const PULSE = "stations-pulse";
+	const LAYERS = [LABEL, CIRCLE, SELECTED, PULSE, RING, HALO];
 
 	// Color: vibrante para frescos, casi gris para antiguos. Las tablas STOPS_*
 	// están compartidas con colors.js para que el JS (border del panel) pueda
@@ -200,6 +208,46 @@ Propiedades esperadas en cada feature:
 		["interpolate", ["linear"], ["get", "daysSinceRecord"], 0, 0.7, 30, 0.5, 365, 0.25, 1825, 0],
 	];
 
+	// Último GeoJSON entregado a la fuente. MapLibre lo re-procesa entero en un
+	// worker en cada setData, así que se evita repetirlo con los mismos datos
+	// (p. ej. justo al montar, cuando add() acaba de crear la fuente con ellos).
+	let sentData = null;
+
+	// ── Estación seleccionada ─────────────────────────────────────────────
+	// Disco blanco con borde en tinta, algo mayor que el círculo y DEBAJO de
+	// él: el círculo queda enmarcado por un anillo blanco y otro oscuro.
+	const SELECTED_GAP = 4; // px de anillo blanco alrededor del círculo
+	const selectedRadius = buildRadius(
+		(r) => r + SELECTED_GAP,
+		[5 + SELECTED_GAP, 10 + SELECTED_GAP],
+	);
+	const filtroSeleccion = (ind) => ["==", ["get", "indicativo"], ind ?? ""];
+
+	// Pulso: una onda que crece `k` px y se desvanece. Se anima reescribiendo
+	// radio y opacidad de la capa en cada fotograma durante PULSE_MS.
+	const PULSE_MS = 1100;
+	const PULSE_GROW = 18;
+	const pulseRadius = (k) =>
+		buildRadius((r) => r + SELECTED_GAP + k, [5 + SELECTED_GAP + k, 10 + SELECTED_GAP + k]);
+	let pulseFrame = 0;
+
+	function pulse() {
+		const map = ctx.getMap();
+		cancelAnimationFrame(pulseFrame);
+		if (!map?.getLayer(PULSE)) return;
+		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		const t0 = performance.now();
+		const step = (now) => {
+			if (!map.getLayer(PULSE)) return;
+			const t = Math.min(1, (now - t0) / PULSE_MS);
+			const ease = 1 - (1 - t) ** 3;
+			map.setPaintProperty(PULSE, "circle-radius", pulseRadius(ease * PULSE_GROW));
+			map.setPaintProperty(PULSE, "circle-stroke-opacity", 0.7 * (1 - t));
+			if (t < 1) pulseFrame = requestAnimationFrame(step);
+		};
+		pulseFrame = requestAnimationFrame(step);
+	}
+
 	function removeLayers(map) {
 		for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
 		if (map.getSource(SRC)) map.removeSource(SRC);
@@ -212,6 +260,7 @@ Propiedades esperadas en cada feature:
 		if (!map) return;
 		removeLayers(map);
 
+		sentData = data;
 		map.addSource(SRC, { type: "geojson", data });
 
 		map.addLayer({
@@ -244,6 +293,33 @@ Propiedades esperadas en cada feature:
 					1.2,
 					["interpolate", ["linear"], ["get", "daysSinceRecord"], 0, 1.4, 365, 0.8, 1825, 0],
 				],
+			},
+		});
+
+		map.addLayer({
+			id: PULSE,
+			type: "circle",
+			source: SRC,
+			filter: filtroSeleccion(selected),
+			paint: {
+				"circle-radius": pulseRadius(0),
+				"circle-opacity": 0,
+				"circle-stroke-color": "#1a1a1a",
+				"circle-stroke-width": 2,
+				"circle-stroke-opacity": 0,
+			},
+		});
+
+		map.addLayer({
+			id: SELECTED,
+			type: "circle",
+			source: SRC,
+			filter: filtroSeleccion(selected),
+			paint: {
+				"circle-radius": selectedRadius,
+				"circle-color": "#ffffff",
+				"circle-stroke-color": "#1a1a1a",
+				"circle-stroke-width": 2.5,
 			},
 		});
 
@@ -334,10 +410,26 @@ Propiedades esperadas en cada feature:
 	for (const [type, fn] of Object.entries(handlers)) ctx.getMap().on(type, CIRCLE, fn);
 
 	$effect(() => {
+		if (data === sentData) return;
+		sentData = data;
 		ctx.getMap()?.getSource(SRC)?.setData(data);
 	});
 
+	// Al cambiar de estación: mueve el resaltado y lanza el pulso cuando el mapa
+	// termina de volar hasta ella (la página llama a flyTo justo antes).
+	$effect(() => {
+		const ind = selected;
+		const map = ctx.getMap();
+		if (!map?.getLayer(SELECTED)) return;
+		for (const id of [SELECTED, PULSE]) map.setFilter(id, filtroSeleccion(ind));
+		if (!ind) return;
+		if (map.isMoving()) map.once("moveend", pulse);
+		else pulse();
+		return () => map.off("moveend", pulse);
+	});
+
 	onDestroy(() => {
+		cancelAnimationFrame(pulseFrame);
 		ctx.offStyleLoad(add);
 		const map = ctx.getMap();
 		if (!map) return;

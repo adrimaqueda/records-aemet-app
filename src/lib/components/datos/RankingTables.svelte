@@ -21,7 +21,8 @@ silenciosamente para no romper la página.
 	import { flip } from "svelte/animate";
 	import { fly } from "svelte/transition";
 
-	let rk = $state(null);
+	// $state.raw: el JSON se sustituye entero y nunca se muta.
+	let rk = $state.raw(null);
 
 	$effect(() => {
 		fetchRankings()

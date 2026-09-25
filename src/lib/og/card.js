@@ -2,41 +2,23 @@
 // resaltado en el mapa). El árbol de elementos lo consume `@vercel/og` (satori)
 // desde el endpoint /estacion/[indicativo]/og.
 //
-// Constantes de proyección (lat/lon → espacio 0..100 de la silueta) y del mapa
-// base (static/og/basemap.png), reconstruidas del mismo pipeline que generó las
-// siluetas. Si se regenera el basemap con otros transforms, actualizar BASEMAP.
+// La proyección lat/lon → espacio de la silueta vive en $lib/geo/siluetas.js
+// (la comparte el minimapa). BASEMAP son las transformaciones con las que se
+// colocaron esas siluetas en el mapa base (static/og/basemap.png): si se
+// regenera con otros transforms, actualizarlas.
 
 import { capWords, fmtTemp } from "$lib/utils/format.js";
+import { proyectar } from "$lib/geo/siluetas.js";
 
-const GEO = {
-	K_PEN: 0.766044443118978,
-	K_CAN: 0.880477353509162,
-	penX0: -7.302997545957567,
-	penY0: -43.79439343440012,
-	sPen: 8.850380985523355,
-	canX0: -15.861651200866499,
-	canY0: -29.322325503752857,
-	sCan: 23.13704052744638,
-	PAD: 3,
-};
 const BASEMAP = { Tm: { tx: 20, ty: 15, s: 5.2 }, Tc: { tx: 35, ty: 410, s: 1.85 } };
 const MAP_LEFT = 600;
 const MAP_TOP = 65;
 
 /** Píxel (en el lienzo 1200×630) donde resaltar la estación, a partir de lat/lon. */
 export function highlightPx(lat, lon) {
-	const isCan = lon < -10 && lat < 31;
-	let X, Y, T;
-	if (isCan) {
-		X = GEO.PAD + (lon * GEO.K_CAN - GEO.canX0) * GEO.sCan;
-		Y = GEO.PAD + (-lat - GEO.canY0) * GEO.sCan;
-		T = BASEMAP.Tc;
-	} else {
-		X = GEO.PAD + (lon * GEO.K_PEN - GEO.penX0) * GEO.sPen;
-		Y = GEO.PAD + (-lat - GEO.penY0) * GEO.sPen;
-		T = BASEMAP.Tm;
-	}
-	return { x: MAP_LEFT + T.tx + X * T.s, y: MAP_TOP + T.ty + Y * T.s };
+	const { zona, x, y } = proyectar(lat, lon);
+	const T = zona === "canarias" ? BASEMAP.Tc : BASEMAP.Tm;
+	return { x: MAP_LEFT + T.tx + x * T.s, y: MAP_TOP + T.ty + y * T.s };
 }
 
 const h = (type, props = {}, ...children) => ({

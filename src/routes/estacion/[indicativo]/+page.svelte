@@ -1,6 +1,4 @@
 <script>
-	import { page } from "$app/state";
-	import { fetchStationDetail } from "$lib/data/data.js";
 	import { latestInFamily } from "$lib/data/records.js";
 	import { stationMeta } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
@@ -12,7 +10,11 @@
 	import RecordsMensuales from "$lib/components/station/RecordsMensuales.svelte";
 	import RecordsEvolution from "$lib/components/station/RecordsEvolution.svelte";
 
-	const detailPromise = $derived(fetchStationDetail(page.params.indicativo));
+	let { data } = $props();
+
+	// Promesa del detalle, lanzada en +page.js (y precargada al pasar el ratón
+	// por el enlace).
+	const detailPromise = $derived(data.detail);
 
 	/** Color de recencia del récord más reciente de la estación (cualquier
 	 *  familia): es el que pinta el anillo del minimapa, igual que el marcador

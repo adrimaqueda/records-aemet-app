@@ -23,7 +23,8 @@ Props:
 
 	let { data, vista, modoEstacion = false } = $props();
 
-	let hoverIdx = $state(-1);
+	let hoverIdx = $state(-1); // barra bajo el ratón
+	let fijadaIdx = $state(-1); // barra fijada con un toque, un clic o el teclado
 	// Scroll horizontal + minimapa (cuando no caben todas las barras).
 	let scroller = $state(null); // contenedor con scroll (bind:this)
 	let scrollVW = $state(0); // ancho visible del área de barras
@@ -114,6 +115,16 @@ Props:
 	const titulo = $derived(esVigentes ? "Récords vigentes por año" : "Récords batidos por periodo");
 
 	// --- derivaciones reactivas -----------------------------------------
+	/** Barra cuyo detalle se muestra: la del ratón, la fijada o, por defecto,
+	 *  la última (el periodo más reciente, el que más interesa). */
+	const activeIdx = $derived(
+		hoverIdx >= 0
+			? hoverIdx
+			: fijadaIdx >= 0 && fijadaIdx < data.length
+				? fijadaIdx
+				: data.length - 1,
+	);
+	const activa = $derived(data[activeIdx] ?? null);
 	// Ancho del área de barras: el visible, o el mínimo para que cada barra
 	// tenga minBand px (en cuyo caso aparece scroll horizontal + minimapa).
 	const contentPlotW = $derived(Math.max(scrollVW, data.length * minBand + MARGIN.right));
@@ -162,13 +173,41 @@ Props:
 		const became = ns && !wasScrollable;
 		lastSig = sig;
 		wasScrollable = ns;
-		// El dataset cambió: el índice hover apuntaría a otra barra.
-		if (changed) hoverIdx = -1;
+		// El dataset cambió: los índices apuntarían a otra barra.
+		if (changed) {
+			hoverIdx = -1;
+			fijadaIdx = -1;
+		}
 		if (ns && (changed || became)) {
 			scroller.scrollLeft = cw; // el navegador lo recorta al máximo
 			scrollLeft = scroller.scrollLeft;
 		}
 	});
+
+	// Teclado sobre la gráfica: ← → recorren los periodos, Inicio/Fin saltan a
+	// los extremos. La barra elegida queda fijada y, con scroll, a la vista.
+	function onChartKey(e) {
+		const n = data.length;
+		const next = { ArrowLeft: activeIdx - 1, ArrowRight: activeIdx + 1, Home: 0, End: n - 1 }[
+			e.key
+		];
+		if (!n || next == null) return;
+		e.preventDefault();
+		hoverIdx = -1;
+		fijadaIdx = Math.max(0, Math.min(n - 1, next));
+		revelar(fijadaIdx);
+	}
+
+	/** Desplaza el área de barras lo justo para que se vea la barra `i`. */
+	function revelar(i) {
+		if (!scroller || !geom || !needsScroll) return;
+		const x = geom.x(data[i].label);
+		const pad = 24;
+		if (x < scroller.scrollLeft + pad) scroller.scrollLeft = x - pad;
+		else if (x + geom.barW > scroller.scrollLeft + scrollVW - pad)
+			scroller.scrollLeft = x + geom.barW - scrollVW + pad;
+		scrollLeft = scroller.scrollLeft;
+	}
 
 	function onScroll() {
 		if (scroller) scrollLeft = scroller.scrollLeft;
@@ -220,8 +259,8 @@ Props:
 
 <!-- Tooltip flotante con la barra hover -->
 <div class="info">
-	{#if hoverIdx >= 0 && data[hoverIdx]}
-		{@const d = data[hoverIdx]}
+	{#if activa}
+		{@const d = activa}
 		<p class="tooltip">
 			<strong>{d.labelLong}</strong>
 			<span class="tip-sep">·</span>
@@ -229,8 +268,6 @@ Props:
 			<span class="tip-sep">·</span>
 			{@render famDetail("Mín", "tip-min", d.recordsMin, d.estacionesBatieronMin, d.pctMin, d)}
 		</p>
-	{:else if data.length > 0}
-		<p class="hint small muted">Pasa el ratón sobre una barra para ver el detalle.</p>
 	{/if}
 </div>
 
@@ -261,7 +298,23 @@ Props:
 		</svg>
 
 		<!-- Área de barras: se desplaza horizontalmente si no caben todas. -->
-		<div class="chart-scroll" bind:this={scroller} bind:clientWidth={scrollVW} onscroll={onScroll}>
+		<!-- Enfocable: con ← → se recorren los periodos (ver onChartKey). -->
+		<div
+			class="chart-scroll"
+			bind:this={scroller}
+			bind:clientWidth={scrollVW}
+			onscroll={onScroll}
+			onkeydown={onChartKey}
+			tabindex="0"
+			role="slider"
+			aria-label="{titulo}. Usa las flechas para recorrer los periodos"
+			aria-valuemin="0"
+			aria-valuemax={Math.max(0, data.length - 1)}
+			aria-valuenow={activeIdx}
+			aria-valuetext={activa
+				? `${activa.labelLong}: ${activa.recordsMax} de máxima, ${activa.recordsMin} de mínima`
+				: undefined}
+		>
 			<svg
 				width={contentPlotW}
 				height={HEIGHT}
@@ -280,30 +333,39 @@ Props:
 						{@const x = geom.x(d.label)}
 						{@const hMax = barHeight(geom, d.recordsMax, esVigentes)}
 						{@const hMin = barHeight(geom, d.recordsMin, esVigentes)}
+						<!-- Ratón: detalle al pasar. Toque o clic: fija la barra (en
+						     táctil no hay «pasar por encima»). El teclado va por el
+						     contenedor, así que el clic no necesita equivalente aquí. -->
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<g
-							onmouseenter={() => (hoverIdx = i)}
-							onmouseleave={() => (hoverIdx = -1)}
+							onpointerenter={(e) => e.pointerType === "mouse" && (hoverIdx = i)}
+							onpointerleave={(e) => e.pointerType === "mouse" && (hoverIdx = -1)}
+							onclick={() => (fijadaIdx = i)}
 							role="presentation"
 						>
 							<rect {x} y={MARGIN.top} width={geom.barW} height={geom.h} fill="transparent" />
 							<rect
+								class="bar"
 								{x}
 								y={geom.cy - hMax}
 								width={geom.barW}
 								height={hMax}
 								fill={COLOR_MAX}
-								opacity={hoverIdx === i ? 1 : 0.85}
 							/>
-							<rect
-								{x}
-								y={geom.cy}
-								width={geom.barW}
-								height={hMin}
-								fill={COLOR_MIN}
-								opacity={hoverIdx === i ? 1 : 0.85}
-							/>
+							<rect class="bar" {x} y={geom.cy} width={geom.barW} height={hMin} fill={COLOR_MIN} />
 						</g>
 					{/each}
+					<!-- Marco de la barra activa (ratón, fijada o la última). -->
+					{#if activa}
+						<rect
+							class="sel"
+							x={geom.x(activa.label) - 2}
+							y={MARGIN.top - 3}
+							width={geom.barW + 4}
+							height={geom.h + 6}
+							rx="2"
+						/>
+					{/if}
 					<!-- Etiquetas del eje X, en la base. La última siempre se muestra;
 					     las regulares se saltan si caen demasiado cerca de ella. -->
 					{#each data as d, i (d.label)}
@@ -390,8 +452,8 @@ Props:
 		Cada barra es el número de récords (absolutos y mensuales) que batió esta estación en ese
 		periodo.
 	{:else}
-		Pasa el ratón por un periodo para ver el desglose, incluido el porcentaje de estaciones que
-		batieron récord.
+		Pasa el ratón o toca una barra (con la gráfica enfocada, también ← →) para ver el desglose,
+		incluido el porcentaje de estaciones que batieron récord.
 	{/if}
 </p>
 
@@ -534,8 +596,24 @@ Props:
 	.chart-hint {
 		margin: 0.5rem 0 0;
 	}
-	.hint {
-		margin: 0;
+	/* El realce de la barra bajo el cursor va por CSS: con un atributo que
+	   dependiera de hoverIdx, cada movimiento del ratón reevaluaba las ~200
+	   barras de la serie anual. */
+	.bar {
+		opacity: 0.85;
+	}
+	g:hover .bar {
+		opacity: 1;
+	}
+	.sel {
+		fill: none;
+		stroke: var(--ink);
+		stroke-width: 1.5;
+		pointer-events: none;
+	}
+	.chart-scroll:focus-visible {
+		outline: 2px solid var(--max);
+		outline-offset: -2px;
 	}
 	.tick {
 		font-size: 10px;

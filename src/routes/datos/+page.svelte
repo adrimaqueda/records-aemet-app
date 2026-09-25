@@ -19,8 +19,10 @@
 	];
 
 	// --- estado ---------------------------------------------------------
-	let stats = $state(null);
-	let stations = $state(null); // se carga bajo demanda
+	// Los JSON se guardan con $state.raw: se sustituyen enteros y nunca se
+	// mutan, así que el proxy profundo de $state solo añadiría coste.
+	let stats = $state.raw(null);
+	let stations = $state.raw(null); // se carga bajo demanda
 	let loadError = $state(null);
 	let grupo = $state("total");
 	/** 'anual' = un año por barra · 'mensual' = 12 meses de un año ·
@@ -30,8 +32,7 @@
 	// Estación seleccionada dentro de una provincia: en vez de navegar a su
 	// ficha, filtramos la gráfica a sus propios récords (acumulado por estación).
 	let estacionSel = $state("");
-	let stationDetail = $state(null);
-	const stationCache = new Map();
+	let stationDetail = $state.raw(null);
 
 	$effect(() => {
 		fetchStats()
@@ -53,17 +54,14 @@
 		}
 	});
 
-	// Lazy-load del detalle de la estación elegida (cacheado en memoria). El
-	// detalle ya trae todos los eventos de récord, así que el acumulado por
-	// estación se calcula en cliente sin tocar el pipeline ni la base de datos.
+	// Lazy-load del detalle de la estación elegida (fetchStationDetail ya lo
+	// cachea en memoria). El detalle trae todos los eventos de récord, así que
+	// el acumulado por estación se calcula en cliente sin tocar el pipeline.
 	$effect(() => {
 		const ind = estacionSel;
-		const cached = stationCache.get(ind) ?? null;
-		stationDetail = cached;
-		if (!ind || cached) return;
+		if (!ind) return;
 		fetchStationDetail(ind)
 			.then((d) => {
-				stationCache.set(ind, d);
 				if (estacionSel === ind) stationDetail = d;
 			})
 			.catch((e) => console.warn("No se pudo cargar la estación", e));

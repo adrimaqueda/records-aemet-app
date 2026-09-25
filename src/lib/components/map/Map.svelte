@@ -8,7 +8,8 @@ Expone un contexto ("maplibre-map") para que los hijos (<StationsLayer>,
 el primer estilo ha cargado.
 
 Tema inicial con la prop `theme` (ids en mapThemes.js). A partir de ahí lo
-cambia el usuario desde MapControls.
+cambia el usuario desde MapControls; con `themeKey`, la elección se recuerda
+en el navegador (localStorage) bajo esa clave.
 
 Uso:
 <Map longitude={-3.7} latitude={40.2} zoom={5.2} onReady={(m) => (mapRef = m)}>
@@ -31,6 +32,7 @@ Uso:
 			[10, 48],
 		],
 		theme = DEFAULT_THEME,
+		themeKey = null,
 		interactive = true,
 		// Control de atribución de MapLibre (esquina inferior derecha). Se puede
 		// apagar en minimapas decorativos, donde no cabe; en ese caso la
@@ -49,7 +51,19 @@ Uso:
 
 	// Tema activo. Se inicializa con la prop `theme` y a partir de ahí lo
 	// controla el selector de MapControls vía `setTheme` (contexto).
-	let currentTheme = $state(untrack(() => theme));
+	let currentTheme = $state(untrack(() => temaGuardado(themeKey) ?? theme));
+
+	// localStorage puede no existir o lanzar (ventana privada, datos bloqueados):
+	// en ese caso simplemente no se recuerda.
+	function temaGuardado(key) {
+		if (!key) return null;
+		try {
+			const id = localStorage.getItem(key);
+			return id && THEME_URLS[id] ? id : null;
+		} catch {
+			return null;
+		}
+	}
 	const styleUrl = $derived(THEME_URLS[currentTheme] ?? THEME_URLS[DEFAULT_THEME]);
 
 	setContext("maplibre-map", {
@@ -61,7 +75,15 @@ Uso:
 			return currentTheme;
 		},
 		setTheme: (id) => {
-			if (THEME_URLS[id]) currentTheme = id;
+			if (!THEME_URLS[id]) return;
+			currentTheme = id;
+			if (themeKey) {
+				try {
+					localStorage.setItem(themeKey, id);
+				} catch {
+					/* sin almacenamiento: no se recuerda */
+				}
+			}
 		},
 	});
 

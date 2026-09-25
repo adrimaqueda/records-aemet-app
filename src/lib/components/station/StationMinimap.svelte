@@ -11,9 +11,11 @@ Dos disposiciones sobre el MISMO componente (elegidas con `isMobile`, <700 px):
   · móvil      → banda a todo el ancho con el inset de la península incrustado
     en la esquina superior derecha, coordenadas y escala en el pie.
 
-Ambos mapas son NO interactivos (sin zoom ni pan) y usan el tema "claro", que
-ya trae la paleta del sitio. El inset esconde etiquetas, vías y edificios para
-que quede solo la silueta.
+El mapa comarcal es un MapLibre NO interactivo (sin zoom ni pan) con el tema
+"claro", que ya trae la paleta del sitio. El inset no es un mapa: es la silueta
+en SVG de $lib/geo/siluetas.js (la misma del botón del mapa y de la tarjeta OG)
+con la estación proyectada encima, así la ficha no arranca un segundo MapLibre
+con su estilo y sus teselas solo para enseñar una silueta.
 
 Uso:
   <StationMinimap {detail} color={colorForDays(true, daysSince(fecha))} />
@@ -21,6 +23,7 @@ Uso:
 <script>
 	import Map from "$lib/components/map/Map.svelte";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
+	import { proyectar, PENINSULA, CANARIAS, CANARIAS_OCCIDENTALES } from "$lib/geo/siluetas.js";
 
 	/** @type {{ detail: any, color?: string | null }} */
 	let { detail, color = null } = $props();
@@ -28,43 +31,20 @@ Uso:
 	// Zoom de ciudad/comarca, igual en las dos disposiciones.
 	const CITY_ZOOM = 8.6;
 
-	// Encuadres del inset: península + Baleares (más Ceuta y Melilla), o el
-	// archipiélago canario. Ojo, el inset es un CÍRCULO pero `fitBounds` encaja
-	// el bbox en el cuadrado, así que las esquinas caen fuera del recorte: con
-	// un bbox ceñido a la costa, las estaciones de la Costa da Morte (Fisterra,
-	// Cabo Vilán…) quedaban tapadas por el borde. Cada bbox es por eso un
-	// CUADRADO en proyección Mercator cuyo círculo inscrito es el menor que
-	// contiene todas las estaciones de la zona, con un 7 % de aire; así el
-	// círculo visible las cubre todas y se aprovecha el máximo de escala.
-	// Recalcular si el dataset añade estaciones más extremas.
-	const FRAMES = {
-		peninsula: {
-			bounds: [
-				[-10.4, 34.9],
-				[5.0, 46.4],
-			],
-			center: [-2.7, 40.9],
-			zoom: 3.4,
-		},
-		canarias: {
-			bounds: [
-				[-18.45, 26.15],
-				[-13.2, 30.75],
-			],
-			center: [-15.8, 28.5],
-			zoom: 4.8,
-		},
+	// Encuadre del inset: un CUADRADO en el espacio de la silueta. El inset se
+	// recorta en círculo, así que cada cuadrado se ha elegido para que su círculo
+	// inscrito contenga todas las estaciones de la zona (Fisterra, Menorca,
+	// Melilla; El Hierro y Lanzarote) con un poco de aire. Recalcular si el
+	// dataset añade estaciones más extremas.
+	const INSET = {
+		peninsula: { viewBox: "-11 -14 116 116", paths: PENINSULA },
+		canarias: { viewBox: "-5.5 -31.5 108 108", paths: [...CANARIAS, ...CANARIAS_OCCIDENTALES] },
 	};
-	// Margen de `fitBounds`: deja sitio al punto de la estación (7 px + halo)
-	// para que ninguno se coma el borde del círculo.
-	const INSET_PAD = 6;
-	// Capas que sobran en el inset: a esa escala solo queremos la silueta.
-	const CLUTTER = /^(transportation|transportation_name|building|boundary|aeroway)$/;
 
 	const hasCoords = $derived(Number.isFinite(detail.lat) && Number.isFinite(detail.lon));
-	// Canarias está en 27,7–29,2 N y la estación peninsular más al sur es Melilla
-	// (35,28 N), así que la latitud basta para elegir encuadre.
-	const frame = $derived(hasCoords && detail.lat < 32 ? FRAMES.canarias : FRAMES.peninsula);
+	// Posición de la estación en el espacio de la silueta y encuadre de su zona.
+	const punto = $derived(hasCoords ? proyectar(detail.lat, detail.lon) : null);
+	const inset = $derived(punto ? INSET[punto.zona] : null);
 	const ring = $derived(color ?? "var(--line-strong)");
 
 	const fmtCoord = (v, pos, neg) =>
@@ -87,34 +67,6 @@ Uso:
 		return best;
 	}
 	const scale = $derived(scaleBar(CITY_ZOOM, detail.lat, 120));
-
-	/** Deja el inset en silueta: fuera etiquetas, vías, edificios y límites. */
-	function silhouette(map) {
-		const strip = () => {
-			for (const l of map.getStyle()?.layers ?? []) {
-				if (l.type !== "symbol" && !CLUTTER.test(l["source-layer"] ?? "")) continue;
-				try {
-					map.setLayoutProperty(l.id, "visibility", "none");
-				} catch {
-					/* capa sin layout */
-				}
-			}
-			map.fitBounds(frame.bounds, { padding: INSET_PAD, animate: false });
-		};
-		map.on("style.load", strip);
-		if (map.isStyleLoaded()) strip();
-	}
-
-	/** Punto de la estación en el inset (posición real, no al centro). */
-	function insetMarker(map) {
-		silhouette(map);
-		import("maplibre-gl").then(({ Marker }) => {
-			const el = document.createElement("div");
-			el.className = "inset-dot";
-			el.style.background = ring;
-			new Marker({ element: el }).setLngLat([detail.lon, detail.lat]).addTo(map);
-		});
-	}
 </script>
 
 <!-- Mapa a escala comarcal centrado en la estación. -->
@@ -132,17 +84,14 @@ Uso:
 
 <!-- Silueta de la península o de Canarias con el punto de la estación. -->
 {#snippet insetMap()}
-	<Map
-		latitude={frame.center[1]}
-		longitude={frame.center[0]}
-		zoom={frame.zoom}
-		minZoom={0}
-		maxBounds={null}
-		theme="claro"
-		interactive={false}
-		attribution={false}
-		onReady={insetMarker}
-	/>
+	<svg class="inset-svg" viewBox={inset.viewBox} aria-hidden="true">
+		<!-- Dos pasadas: primero el contorno y encima el relleno, que tapa la
+		     parte interior de los trazos (la frontera con Portugal) y deja solo
+		     la línea de costa, como el mapa al que sustituye. -->
+		{#each inset.paths as d, i (i)}<path class="inset-coast" {d} />{/each}
+		{#each inset.paths as d, i (i)}<path class="inset-land" {d} />{/each}
+		<circle class="inset-dot" cx={punto.x} cy={punto.y} r="5.5" />
+	</svg>
 {/snippet}
 
 {#if hasCoords}
@@ -196,7 +145,8 @@ Uso:
 		border-radius: 50%;
 		overflow: hidden;
 		border: 3px solid var(--surface);
-		background: #f6f5f1;
+		/* Agua y tierra del tema "claro" del mapa, como el medallón. */
+		background: #c6d2d8;
 		box-shadow: 0 6px 18px -8px rgba(20, 20, 20, 0.4);
 	}
 	.inset-disc {
@@ -291,12 +241,26 @@ Uso:
 		box-shadow: 0 0 0 3px var(--surface);
 	}
 
-	.inset :global(.inset-dot) {
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		box-shadow:
-			0 0 0 2px var(--surface),
-			0 0 0 3px rgba(20, 20, 20, 0.12);
+	.inset-svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+	.inset-coast {
+		fill: none;
+		stroke: #aab7be;
+		stroke-width: 1.2;
+		stroke-linejoin: round;
+		vector-effect: non-scaling-stroke;
+	}
+	.inset-land {
+		fill: #f6f5f1;
+	}
+	/* Punto de la estación: su color de recencia con un halo del fondo. */
+	.inset-dot {
+		fill: var(--ring);
+		stroke: var(--surface);
+		stroke-width: 2.5;
+		paint-order: stroke;
 	}
 </style>

@@ -1,4 +1,7 @@
 <script>
+	import { untrack } from "svelte";
+	import { page } from "$app/state";
+	import { pushState, replaceState } from "$app/navigation";
 	import Map from "$lib/components/map/Map.svelte";
 	import MapControls from "$lib/components/map/MapControls.svelte";
 	import StationsLayer from "$lib/components/map/StationsLayer.svelte";
@@ -6,18 +9,13 @@
 	import RecientesPanel from "$lib/components/map/RecientesPanel.svelte";
 	import Segmented from "$lib/components/ui/Segmented.svelte";
 	import {
-		fetchStations,
 		fetchStats,
+		FAMILIAS,
 		FAMILIA_OPCIONES,
 		FAMILIA_SHORT,
 		FAMILIA_TIPOS,
 	} from "$lib/data/data.js";
-	import {
-		ultimoVigenteEnFamilia,
-		anioDeVigente,
-		aniosConVigentes,
-		vigentesEnAnio,
-	} from "$lib/data/records.js";
+	import { ultimoVigenteEnFamilia, vigentesEnAnio } from "$lib/data/records.js";
 	import { daysSince, relativeFromNow } from "$lib/utils/age.js";
 	import { PAGE_META } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
@@ -25,19 +23,30 @@
 	import { extent } from "d3-array";
 	import { slide } from "svelte/transition";
 
-	let stations = $state([]);
+	let { data } = $props();
+
+	// $state.raw: el catálogo (cientos de estaciones) se sustituye entero y
+	// nunca se muta, así que no hace falta el proxy profundo de $state.
+	let stations = $state.raw([]);
 	/** Fecha de la última actualización del dataset (la publica el pipeline en stats.json). */
 	let ultimaActualizacion = $state(null);
 	let loading = $state(true);
 	let error = $state(null);
-	let familia = $state("max");
+	// La vista (familia, año y estación abierta) viaja en la URL para poder
+	// compartirla: ?familia=min&anio=2024&estacion=5783. Aquí se lee la inicial;
+	// el año y la estación se validan cuando llega el catálogo.
+	const params = page.url.searchParams;
+	let familia = $state(FAMILIAS.includes(params.get("familia")) ? params.get("familia") : "max");
 	/** Año del filtro "récord vigente de" (null = todos los años). */
-	let anio = $state(null);
+	let anio = $state(/^\d{4}$/.test(params.get("anio") ?? "") ? +params.get("anio") : null);
+	const estacionInicial = params.get("estacion");
 	/** HUD desplegada (todo) o compacta (solo título y filtro). */
 	let hudExpanded = $state(true);
 	/** @type {{indicativo: string, color: string} | null} */
 	let selected = $state(null);
 	let mapRef = $state(null);
+	/** Vuelo pedido antes de que existiera el mapa (estación abierta desde la URL). */
+	let vueloPendiente = null;
 	const now = new Date();
 
 	const viewPeninsula = $derived({
@@ -52,52 +61,71 @@
 	});
 
 	$effect(() => {
-		fetchStations()
-			.then((s) => (stations = s))
+		data.stations
+			.then((s) => {
+				stations = s;
+				// Un año de la URL sin estaciones en esta familia se descarta.
+				if (anio != null && !aniosOpts.includes(anio)) anio = null;
+				if (estacionInicial) abrir(estacionInicial);
+			})
 			.catch((e) => (error = String(e)))
-			.finally(() => (loading = false));
-		fetchStats()
-			.then((s) => (ultimaActualizacion = s.generadoEn))
-			.catch((e) => console.warn("No se pudo cargar stats.json", e));
+			.finally(() => {
+				loading = false;
+				// stats.json solo aporta la fecha de actualización: se pide después
+				// para no competir en ancho de banda con stations.json.
+				fetchStats()
+					.then((s) => (ultimaActualizacion = s.generadoEn))
+					.catch((e) => console.warn("No se pudo cargar stats.json", e));
+			});
 	});
+
+	/** Por estación, su último récord vigente de la familia activa y el año en
+	 *  que se fijó. Se calcula una sola vez por familia y lo reutilizan el
+	 *  filtro de año, el GeoJSON y el panel de récords. */
+	const conVigente = $derived(
+		stations.map((s) => {
+			const ult = ultimoVigenteEnFamilia(s, familia);
+			return { s, ult, anio: ult ? +ult.fecha.slice(0, 4) : null };
+		}),
+	);
 
 	/** Años en los que alguna estación tiene su récord vigente de la familia
 	 *  activa, de más reciente a más antiguo. */
-	const aniosOpts = $derived(aniosConVigentes(stations, familia));
+	const aniosOpts = $derived(
+		[...new Set(conVigente.map((x) => x.anio))].filter((y) => y != null).sort((a, b) => b - a),
+	);
 
-	// Al cambiar de familia, el año elegido puede quedarse sin ninguna estación
-	// (típico en años antiguos): en ese caso se vuelve a "cualquier año" en vez
-	// de dejar el mapa vacío sin explicación.
-	$effect(() => {
-		if (anio != null && aniosOpts.length > 0 && !aniosOpts.includes(anio)) anio = null;
-	});
+	function setFamilia(v) {
+		familia = v;
+		selected = null;
+		// El año elegido puede quedarse sin ninguna estación en la otra familia
+		// (típico en años antiguos): en ese caso se vuelve a "cualquier año" en
+		// vez de dejar el mapa vacío sin explicación. Se hace aquí y no en un
+		// $effect para que el mapa no llegue a pintarse vacío un fotograma.
+		if (anio != null && !aniosOpts.includes(anio)) anio = null;
+	}
 
 	/** Estaciones que se pintan: todas, o solo aquellas cuyo récord vigente de la
 	 *  familia activa se fijó en el año seleccionado. */
-	const visibles = $derived(
-		anio == null ? stations : stations.filter((s) => anioDeVigente(s, familia) === anio),
-	);
+	const visibles = $derived(anio == null ? conVigente : conVigente.filter((x) => x.anio === anio));
 
 	const geojson = $derived.by(() => {
 		const features = visibles
-			.map((s) => {
-				const ult = ultimoVigenteEnFamilia(s, familia);
-				return {
-					type: "Feature",
-					geometry: { type: "Point", coordinates: [s.lon, s.lat] },
-					properties: {
-						indicativo: s.indicativo,
-						esMax: familia === "max",
-						esAbsoluto: !!ult?.esAbsoluto,
-						provisional: !!ult?.provisional,
-						daysSinceRecord: daysSince(ult?.fecha, now) ?? 100000,
-						// Con filtro de año, todas las estaciones mostradas son del mismo
-						// año: la escala de antigüedad deja de informar y la capa pinta
-						// todos los puntos igual.
-						uniforme: anio != null,
-					},
-				};
-			})
+			.map(({ s, ult }) => ({
+				type: "Feature",
+				geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+				properties: {
+					indicativo: s.indicativo,
+					esMax: familia === "max",
+					esAbsoluto: !!ult?.esAbsoluto,
+					provisional: !!ult?.provisional,
+					daysSinceRecord: daysSince(ult?.fecha, now) ?? 100000,
+					// Con filtro de año, todas las estaciones mostradas son del mismo
+					// año: la escala de antigüedad deja de informar y la capa pinta
+					// todos los puntos igual.
+					uniforme: anio != null,
+				},
+			}))
 			// Los más antiguos primero → los frescos quedan al final y se pintan
 			// ENCIMA (mayor z). Los círculos respetan este orden de dibujado.
 			.sort((a, b) => b.properties.daysSinceRecord - a.properties.daysSinceRecord);
@@ -130,9 +158,9 @@
 	 *  que cuenta el badge ×N de cada fila. Más recientes primero. */
 	const panelItems = $derived(
 		visibles
-			.map((s) => ({
+			.map(({ s, ult }) => ({
 				s,
-				ult: ultimoVigenteEnFamilia(s, familia),
+				ult,
 				n: anio == null ? countRecientes(s) : vigentesEnAnio(s, familia, anio),
 			}))
 			.filter((x) => x.ult && (anio != null || x.n > 0))
@@ -179,14 +207,14 @@
 		if (width === 0 || height === 0) return;
 
 		const m = safeMargin();
-		const anyVisible = visibles.some((s) => {
+		const anyVisible = visibles.some(({ s }) => {
 			const p = mapRef.project([s.lon, s.lat]);
 			return p.x >= m.left && p.x <= width - m.right && p.y >= m.top && p.y <= height - m.bottom;
 		});
 		if (anyVisible) return;
 
-		const [minLon, maxLon] = extent(visibles, (s) => s.lon);
-		const [minLat, maxLat] = extent(visibles, (s) => s.lat);
+		const [minLon, maxLon] = extent(visibles, (x) => x.s.lon);
+		const [minLat, maxLat] = extent(visibles, (x) => x.s.lat);
 		// El padding nunca puede igualar/superar el contenedor: MapLibre lanza
 		// en `fitBounds` si left+right >= width (o top+bottom >= height).
 		const maxH = Math.max(0, width / 2 - 1);
@@ -212,7 +240,8 @@
 		);
 	});
 
-	function focusStation(indicativo) {
+	/** Abre el panel de una estación y vuela hasta ella. */
+	function abrir(indicativo) {
 		const s = stations.find((x) => x.indicativo === indicativo);
 		if (!s) return;
 		const days = daysSince(ultimoVigenteEnFamilia(s, familia)?.fecha, now);
@@ -220,7 +249,68 @@
 		// año el mapa pinta todos los puntos con el color vivo de la familia.
 		const color = colorForDays(familia === "max", anio == null ? days : 0);
 		selected = { indicativo, color };
-		mapRef?.flyTo({ center: [s.lon, s.lat - 0.015], zoom: 12, duration: 900, essential: true });
+		const destino = { center: [s.lon, s.lat - 0.015], zoom: 12 };
+		if (mapRef) mapRef.flyTo({ ...destino, duration: 900, essential: true });
+		else vueloPendiente = destino;
+	}
+
+	// --- Vista en la URL y en el historial ------------------------------
+	// SvelteKit no cambia `page.url` con pushState/replaceState (enrutado
+	// superficial), así que la vista se guarda también en `page.state`, que sí
+	// se restaura al ir atrás/adelante.
+
+	const vista = $derived({ familia, anio, estacion: selected?.indicativo ?? null });
+
+	/** URL de una vista, solo con lo que difiere de la vista por defecto. */
+	function urlDeVista(v) {
+		const u = new URL(page.url.pathname, page.url.origin);
+		if (v.familia !== "max") u.searchParams.set("familia", v.familia);
+		if (v.anio != null) u.searchParams.set("anio", String(v.anio));
+		if (v.estacion) u.searchParams.set("estacion", v.estacion);
+		return u;
+	}
+
+	// Mantiene la URL y la entrada actual del historial al día. Espera a que
+	// llegue el catálogo: antes el router puede no estar listo y la vista de la
+	// URL aún no está validada. `apilada` marca las entradas creadas al abrir
+	// una estación (ver focusStation).
+	$effect(() => {
+		const v = vista;
+		if (loading) return;
+		untrack(() => replaceState(urlDeVista(v), { ...v, apilada: page.state.apilada ?? false }));
+	});
+
+	// Atrás / adelante: restaura la vista guardada en la entrada del historial
+	// (en la práctica, cierra o reabre el panel de la estación).
+	$effect(() => {
+		const v = page.state;
+		if (!("familia" in v)) return;
+		untrack(() => {
+			if (v.familia !== familia) familia = v.familia;
+			if (v.anio !== anio) anio = v.anio;
+			if (v.estacion !== vista.estacion) {
+				if (v.estacion) abrir(v.estacion);
+				else selected = null;
+			}
+		});
+	});
+
+	/** Abrir una estación desde el mapa o el listado. Con el panel cerrado crea
+	 *  una entrada en el historial, para que «atrás» lo cierre; pasar de una
+	 *  estación a otra solo la reemplaza. */
+	function focusStation(indicativo) {
+		if (!selected && !loading) {
+			const v = { ...vista, estacion: indicativo };
+			pushState(urlDeVista(v), { ...v, apilada: true });
+		}
+		abrir(indicativo);
+	}
+
+	function cerrarEstacion() {
+		// Si la abrimos nosotros, cerrar es volver atrás (así no queda una
+		// entrada huérfana); si venía en la URL, simplemente se cierra.
+		if (page.state.apilada && page.state.estacion) history.back();
+		else selected = null;
 	}
 </script>
 
@@ -229,198 +319,213 @@
 </svelte:head>
 
 <div class="root">
+	<!-- El mapa se monta desde el principio para que MapLibre, el estilo y las
+	     teselas se descarguen en paralelo con stations.json. Mientras llegan las
+	     estaciones se ve detrás de un velo, con el aviso de carga encima. -->
+	<div class="map-wrap">
+		<Map
+			longitude={viewPeninsula.center[0]}
+			latitude={viewPeninsula.center[1]}
+			zoom={viewPeninsula.zoom}
+			themeKey="tema-mapa"
+			onReady={(m) => {
+				mapRef = m;
+				if (vueloPendiente) m.jumpTo(vueloPendiente);
+				vueloPendiente = null;
+			}}
+		>
+			{#if stations.length > 0}
+				<StationsLayer
+					data={geojson}
+					selected={selected?.indicativo ?? null}
+					onClick={focusStation}
+				/>
+			{/if}
+			<MapControls initialView={viewPeninsula} altView={viewCanarias} />
+		</Map>
+	</div>
+
 	{#if loading}
-		<div class="overlay">
-			<div class="spinner" aria-hidden="true"></div>
-			<p>Cargando estaciones…</p>
+		<div class="overlay veil">
+			<p class="loading-pill" role="status">
+				<span class="spinner" aria-hidden="true"></span>
+				Cargando estaciones…
+			</p>
 		</div>
 	{:else if error}
 		<div class="overlay error">
 			<p>No se pudieron cargar las estaciones.</p>
 			<p class="detail">{error}</p>
 		</div>
-	{:else}
-		<div class="map-wrap">
-			<Map
-				longitude={viewPeninsula.center[0]}
-				latitude={viewPeninsula.center[1]}
-				zoom={viewPeninsula.zoom}
-				onReady={(m) => (mapRef = m)}
-			>
-				<StationsLayer data={geojson} onClick={focusStation} />
-				<MapControls initialView={viewPeninsula} altView={viewCanarias} />
-			</Map>
-		</div>
 	{/if}
 
-	<header
-		class="hud"
-		class:collapsed={!hudExpanded}
-		style:--seg-accent="var(--{familia})"
-		style:--c-fresh={legendColors.fresh}
-		style:--c-year={legendColors.year}
-		style:--c-old={legendColors.old}
-	>
-		<div class="title-row">
-			<h1>¿Cuándo se ha batido el último récord de temperatura?</h1>
-			<button
-				class="toggle"
-				onclick={() => (hudExpanded = !hudExpanded)}
-				aria-expanded={hudExpanded}
-				aria-label={hudExpanded ? "Mostrar menos" : "Mostrar más"}
-				title={hudExpanded ? "Mostrar menos" : "Mostrar más"}
-			>
-				<svg class="caret" viewBox="0 0 10 10" width="12" height="12" aria-hidden="true">
-					<path
-						d="M1.5 3.3 L5 6.8 L8.5 3.3"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.6"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			</button>
-		</div>
-		<Segmented
-			options={FAMILIA_OPCIONES}
-			bind:value={
-				() => familia,
-				(v) => {
-					familia = v;
-					selected = null;
-				}
-			}
-			label="Familia de récord"
-			full
-		/>
-		<!-- Filtro de año: deja en el mapa solo las estaciones cuyo récord vigente
+	<!-- En escritorio, HUD y listado comparten una columna a la izquierda con la
+	     altura de la ventana como tope: el listado ocupa lo que sobra y hace
+	     scroll por dentro, así nunca se pisan. En móvil cada uno va a su borde. -->
+	<div class="side">
+		<header
+			class="hud"
+			class:collapsed={!hudExpanded}
+			style:--seg-accent="var(--{familia})"
+			style:--c-fresh={legendColors.fresh}
+			style:--c-year={legendColors.year}
+			style:--c-old={legendColors.old}
+		>
+			<div class="title-row">
+				<h1>¿Cuándo se ha batido el último récord de temperatura?</h1>
+				<button
+					class="toggle"
+					onclick={() => (hudExpanded = !hudExpanded)}
+					aria-expanded={hudExpanded}
+					aria-label={hudExpanded ? "Mostrar menos" : "Mostrar más"}
+					title={hudExpanded ? "Mostrar menos" : "Mostrar más"}
+				>
+					<svg class="caret" viewBox="0 0 10 10" width="12" height="12" aria-hidden="true">
+						<path
+							d="M1.5 3.3 L5 6.8 L8.5 3.3"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.6"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</button>
+			</div>
+			<Segmented
+				options={FAMILIA_OPCIONES}
+				bind:value={() => familia, setFamilia}
+				label="Familia de récord"
+				full
+			/>
+			<!-- Filtro de año: deja en el mapa solo las estaciones cuyo récord vigente
 		     (el que sigue en pie hoy) se fijó en ese año. -->
-		<div class="year-filter">
-			<label for="filtro-anio">Récord vigente de</label>
-			<select
-				id="filtro-anio"
-				value={anio == null ? "" : String(anio)}
-				onchange={(e) => {
-					anio = e.currentTarget.value === "" ? null : +e.currentTarget.value;
-					// La estación abierta puede haber quedado fuera del filtro.
-					selected = null;
-				}}
-				disabled={aniosOpts.length === 0}
-			>
-				<option value="">Cualquier año</option>
-				{#each aniosOpts as y (y)}
-					<option value={String(y)}>{y}</option>
-				{/each}
-			</select>
-		</div>
-		{#if hudExpanded}
-			<div class="extra" transition:slide={{ duration: 220 }}>
-				<p class="muted">
-					{#if anio == null}
-						{stations.length.toLocaleString("es-ES")} estaciones
-					{:else}
-						<b>{visibles.length.toLocaleString("es-ES")}</b>
-						de {stations.length.toLocaleString("es-ES")} estaciones tienen su récord de
-						{FAMILIA_SHORT[familia].toLowerCase()} vigente fechado en {anio}
-					{/if}
-					{#if ultimaActualizacion}
-						<br />
-						Datos actualizados
-						<b>{relativeFromNow(ultimaActualizacion)}</b>
-					{/if}
-				</p>
-				<nav class="nav-links">
-					<a href="/datos">
-						<span class="link-arrow">↑</span>
-						Resumen de datos
-					</a>
-					<span aria-hidden="true">·</span>
-					<a href="/metodologia">
-						<span class="link-arrow">↑</span>
-						Metodología
-					</a>
-				</nav>
-				<p class="author">
-					Por <a href="https://adrimaqueda.com" target="_blank" rel="noreferrer">
-						<span class="link-arrow">↑</span>
-						Adrián Maqueda
-					</a>
-					<span aria-hidden="true">·</span>
-					<a
-						href="https://github.com/adrimaqueda/records-aemet-app"
-						target="_blank"
-						rel="noreferrer"
-					>
-						<span class="link-arrow">↑</span>
-						Código
-					</a>
-				</p>
-				<details class="legend">
-					<summary>Leyenda</summary>
-					{#if anio == null}
+			<div class="year-filter">
+				<label for="filtro-anio">Récord vigente de</label>
+				<select
+					id="filtro-anio"
+					value={anio == null ? "" : String(anio)}
+					onchange={(e) => {
+						anio = e.currentTarget.value === "" ? null : +e.currentTarget.value;
+						// La estación abierta puede haber quedado fuera del filtro.
+						selected = null;
+					}}
+					disabled={aniosOpts.length === 0}
+				>
+					<option value="">Cualquier año</option>
+					{#each aniosOpts as y (y)}
+						<option value={String(y)}>{y}</option>
+					{/each}
+				</select>
+			</div>
+			{#if hudExpanded}
+				<div class="extra" transition:slide={{ duration: 220 }}>
+					<p class="muted">
+						{#if anio == null}
+							{stations.length.toLocaleString("es-ES")} estaciones
+						{:else}
+							<b>{visibles.length.toLocaleString("es-ES")}</b>
+							de {stations.length.toLocaleString("es-ES")} estaciones tienen su récord de
+							{FAMILIA_SHORT[familia].toLowerCase()} vigente fechado en {anio}
+						{/if}
+						{#if ultimaActualizacion}
+							<br />
+							Datos actualizados
+							<b>{relativeFromNow(ultimaActualizacion)}</b>
+						{/if}
+					</p>
+					<nav class="nav-links">
+						<a href="/datos">
+							<span class="link-arrow">↑</span>
+							Resumen de datos
+						</a>
+						<span aria-hidden="true">·</span>
+						<a href="/metodologia">
+							<span class="link-arrow">↑</span>
+							Metodología
+						</a>
+					</nav>
+					<p class="author">
+						Por <a href="https://adrimaqueda.com" target="_blank" rel="noreferrer">
+							<span class="link-arrow">↑</span>
+							Adrián Maqueda
+						</a>
+						<span aria-hidden="true">·</span>
+						<a
+							href="https://github.com/adrimaqueda/records-aemet-app"
+							target="_blank"
+							rel="noreferrer"
+						>
+							<span class="link-arrow">↑</span>
+							Código
+						</a>
+					</p>
+					<details class="legend">
+						<summary>Leyenda</summary>
+						{#if anio == null}
+							<div class="row">
+								<span class="dot-wrap"><span class="dot dot-fresh size-fresh"></span></span>
+								<span>Último mes — grande, vibrante, con etiqueta y halo</span>
+							</div>
+							<div class="row">
+								<span class="dot-wrap"><span class="dot dot-year size-year"></span></span>
+								<span>Hace meses</span>
+							</div>
+							<div class="row">
+								<span class="dot-wrap"><span class="dot dot-old size-old"></span></span>
+								<span>Hace años — pequeño y desvaído</span>
+							</div>
+						{:else}
+							<div class="row">
+								<span class="dot-wrap"><span class="dot dot-fresh size-uniform"></span></span>
+								<span>
+									Con un año seleccionado todas las estaciones son de ese año: se pintan todas
+									igual, sin escala de antigüedad.
+								</span>
+							</div>
+						{/if}
+						<hr />
 						<div class="row">
-							<span class="dot-wrap"><span class="dot dot-fresh size-fresh"></span></span>
-							<span>Último mes — grande, vibrante, con etiqueta y halo</span>
-						</div>
-						<div class="row">
-							<span class="dot-wrap"><span class="dot dot-year size-year"></span></span>
-							<span>Hace meses</span>
-						</div>
-						<div class="row">
-							<span class="dot-wrap"><span class="dot dot-old size-old"></span></span>
-							<span>Hace años — pequeño y desvaído</span>
-						</div>
-					{:else}
-						<div class="row">
-							<span class="dot-wrap"><span class="dot dot-fresh size-uniform"></span></span>
+							<span class="dot-wrap">
+								<span class="ring"></span>
+								<span class="dot dot-fresh size-fresh"></span>
+							</span>
 							<span>
-								Con un año seleccionado todas las estaciones son de ese año: se pintan todas igual,
-								sin escala de antigüedad.
+								Récord <strong>absoluto</strong>
+								(anillo blanco)
 							</span>
 						</div>
-					{/if}
-					<hr />
-					<div class="row">
-						<span class="dot-wrap">
-							<span class="ring"></span>
-							<span class="dot dot-fresh size-fresh"></span>
-						</span>
-						<span>
-							Récord <strong>absoluto</strong>
-							(anillo blanco)
-						</span>
-					</div>
-					<div class="row">
-						<span class="dot-wrap"><span class="dot dot-fresh size-fresh"></span></span>
-						<span>
-							Récord <strong>mensual</strong>
-						</span>
-					</div>
-					<div class="row">
-						<span class="dot-wrap"><span class="prov-chip">~</span></span>
-						<span>
-							Récord <strong>provisional</strong>
-							— del horario reciente, aún sin dato definitivo
-						</span>
-					</div>
-				</details>
-			</div>
-		{/if}
-	</header>
+						<div class="row">
+							<span class="dot-wrap"><span class="dot dot-fresh size-fresh"></span></span>
+							<span>
+								Récord <strong>mensual</strong>
+							</span>
+						</div>
+						<div class="row">
+							<span class="dot-wrap"><span class="prov-chip">~</span></span>
+							<span>
+								Récord <strong>provisional</strong>
+								— del horario reciente, aún sin dato definitivo
+							</span>
+						</div>
+					</details>
+				</div>
+			{/if}
+		</header>
 
-	<RecientesPanel
-		items={panelItems}
-		titulo={panelTitulo}
-		onSelect={(s) => focusStation(s.indicativo)}
-		{selected}
-		badgeLabel={panelBadgeLabel}
-	/>
+		<RecientesPanel
+			items={panelItems}
+			titulo={panelTitulo}
+			onSelect={(s) => focusStation(s.indicativo)}
+			{selected}
+			badgeLabel={panelBadgeLabel}
+		/>
+	</div>
 
 	<StationPanel
 		indicativo={selected?.indicativo ?? null}
 		color={selected?.color}
-		onClose={() => (selected = null)}
+		onClose={cerrarEstacion}
 		{familia}
 	/>
 </div>
@@ -433,6 +538,9 @@
 	.map-wrap {
 		position: absolute;
 		inset: 0;
+		/* Contexto de apilado propio: la botonera del mapa (z-index 5) queda
+		   dentro y el overlay de carga la tapa mientras llegan los datos. */
+		isolation: isolate;
 	}
 	/* Mobile-first: la HUD se sitúa arriba, compacta, pegada al borde. */
 	.hud {
@@ -448,13 +556,38 @@
 		border-radius: var(--radius);
 		box-shadow: var(--shadow);
 	}
-	/* Desktop: la HUD se compacta a la esquina superior izquierda. */
+	/* Móvil: la columna no existe como caja; HUD y listado se colocan solos. */
+	.side {
+		display: contents;
+	}
+	/* Escritorio: columna a la izquierda. Deja pasar los clics al mapa por el
+	   hueco que quede libre bajo el listado. */
 	@media (min-width: 700px) {
-		.hud {
+		.side {
+			position: absolute;
 			top: 1rem;
+			bottom: 1rem;
 			left: 1rem;
+			z-index: 5;
+			width: 340px;
+			display: flex;
+			flex-direction: column;
+			gap: 0.75rem;
+			pointer-events: none;
+		}
+		.side > :global(*) {
+			pointer-events: auto;
+		}
+		/* La HUD no encoge (el listado cede antes), salvo que no quepa ni
+		   dejando a la vista la cabecera del listado: entonces hace scroll. */
+		.hud {
+			position: relative;
+			top: auto;
+			left: auto;
 			right: auto;
-			max-width: 340px;
+			flex: 0 0 auto;
+			max-height: calc(100% - 3.5rem);
+			overflow-y: auto;
 		}
 	}
 	.title-row {
@@ -674,6 +807,28 @@
 	}
 	.overlay p {
 		margin: 0;
+	}
+	/* Carga: el mapa base se ve detrás de un velo y el aviso va en una píldora. */
+	.overlay.veil {
+		background: color-mix(in srgb, var(--bg) 40%, transparent);
+	}
+	.loading-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.55rem 1rem 0.55rem 0.7rem;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		box-shadow: var(--shadow);
+		font-size: 0.88rem;
+		font-weight: 500;
+		color: var(--muted);
+	}
+	.loading-pill .spinner {
+		width: 16px;
+		height: 16px;
+		border-width: 2px;
 	}
 	.overlay.error .detail {
 		color: var(--faint);

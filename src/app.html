@@ -12,6 +12,12 @@
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 	<meta name="theme-color" content="#fefefe" />
 
+	<!-- Orígenes de los datos (HuggingFace) y de las teselas del mapa: abre la
+	     conexión antes de que el JS los pida. `crossorigin` porque ambos se
+	     piden con fetch en modo CORS. -->
+	<link rel="preconnect" href="https://huggingface.co" crossorigin />
+	<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+
 	<!-- SEO: valores por defecto (los de la home). hooks.server.js reescribe
 	     description, canónica y OG/Twitter por ruta en el HTML servido. -->
 	<link rel="canonical" href="https://records-temperatura.adrimaqueda.com/" />
