@@ -2,8 +2,9 @@
 @component
 RecientesPanel.svelte — listado de estaciones con récord destacado.
 
-Caja flotante (esquina inferior izquierda del mapa) con paginación de 10 en 10
-y un botón en la cabecera para colapsar/expandir el listado. Por defecto lista
+Caja flotante con paginación de 10 en 10. En móvil va pegada al borde inferior;
+en escritorio la coloca la página, debajo de la HUD en una misma columna, y la
+lista hace scroll por dentro si no cabe. Lleva un botón en la cabecera para colapsar/expandir el listado. Por defecto lista
 los récords de los últimos 15 días; con el filtro de año activo la página le
 pasa las estaciones de ese año y cambia el título.
 
@@ -60,7 +61,7 @@ Props:
 		</h2>
 
 		{#if visible}
-			<div transition:slide={{ duration: 200 }}>
+			<div class="body" transition:slide={{ duration: 200 }}>
 				<ol>
 					{#each items.slice(offset, offset + PAGE_SIZE) as { s, ult, n } (s.indicativo)}
 						<li>
@@ -131,12 +132,26 @@ Props:
 		font-family: system-ui, sans-serif;
 		overflow: hidden;
 	}
+	/* Escritorio: la página lo mete en su columna lateral (debajo de la HUD).
+	   Encoge hasta dejar solo la cabecera y la lista hace scroll por dentro,
+	   con la paginación siempre a la vista. */
 	@media (min-width: 700px) {
 		.recientes {
-			bottom: 1rem;
-			left: 1rem;
-			right: auto;
-			width: 340px;
+			position: relative;
+			inset: auto;
+			flex: 0 1 auto;
+			min-height: 2.6rem;
+			display: flex;
+			flex-direction: column;
+		}
+		.body {
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+		}
+		ol {
+			min-height: 0;
+			overflow-y: auto;
 		}
 	}
 

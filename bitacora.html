@@ -172,6 +172,54 @@
     <!-- NUEVA_ENTRADA_AQUI -->
     <article class="entrada">
       <div class="entrada-cabecera">
+        <span class="etiqueta etiqueta-feature">Nueva funcionalidad</span>
+        <time>2026-09-25</time>
+      </div>
+      <h2>Seis mejoras de diseño en el mapa, la ficha y /datos</h2>
+      <p class="resumen">El mapa se puede compartir tal cual se ve, marca la estación abierta y ya no se le pisan los paneles; la ficha dibuja su mapa de situación sin un segundo mapa, y la gráfica de /datos se usa con teclado y en móvil.</p>
+      <section>
+        <h3>Qué se hizo</h3>
+        <p>Salen de una ronda de propuestas validada antes de tocar código (se aprobaron seis de ocho).</p>
+        <p>En escritorio, la caja del título y el listado de récords van ahora en una misma columna: el listado ocupa lo que sobra y hace scroll por dentro. Antes, con ventanas de unos 800 px de alto, se solapaban.</p>
+        <p>La estación abierta se destaca en el mapa con un anillo y una onda breve al llegar. Mientras cargan las estaciones, el mapa base ya se ve detrás de un velo con el aviso de carga.</p>
+        <p>La familia, el año y la estación abierta viajan en la dirección de la página (por ejemplo ?familia=min&amp;anio=2024&amp;estacion=5783), así que un enlace copiado abre esa misma vista. Abrir una estación crea un paso en el historial: «atrás» cierra el panel. El tema del mapa elegido se recuerda en cada navegador.</p>
+        <p>El pequeño mapa de situación de la ficha (el círculo con la península o Canarias) ya no es un mapa interactivo escondido, sino un dibujo con la misma silueta que usan el botón del mapa y la tarjeta para redes sociales. Se añadieron El Hierro y La Gomera, que el dibujo no tenía.</p>
+        <p>La gráfica de /datos enseña por defecto el último periodo, se recorre con las flechas del teclado y en móvil un toque fija la barra elegida.</p>
+      </section>
+      <section>
+        <h3>Por qué se hizo así</h3>
+        <p>Todas atacan fricciones reales vistas al revisar el código: paneles que se pisan, no saber qué punto es el del panel, no poder compartir lo que ves, una gráfica inaccesible sin ratón. La silueta compartida sustituye a un segundo mapa que descargaba estilo y teselas solo para enseñar una forma; ahora las tres piezas que dibujan España lo hacen desde el mismo fichero, así que no pueden desalinearse.</p>
+        <p>Para la dirección de la página, SvelteKit no actualiza su copia de la URL con este tipo de cambios, así que la vista se guarda también en el estado del historial, que es lo que el navegador restaura al ir atrás o adelante.</p>
+      </section>
+      <section>
+        <h3>Otras opciones que se descartaron</h3>
+        <ul class="alternativas">
+          <li><span class="opcion">Crear un paso en el historial por cada cambio de familia o año:</span> Llenaría el botón «atrás» de pasos pequeños; solo abrir una estación lo merece, el resto se refleja en la dirección sin apilar.</li>
+          <li><span class="opcion">Mantener el inset como mapa y solo ocultar más capas:</span> Seguiría pagando un mapa completo (y su conexión) por una silueta que ya teníamos dibujada.</li>
+          <li><span class="opcion">Unificar el estilo del listado y la botonera con el resto (propuesta #4) y un modo oscuro (#8):</span> Se propusieron y se descartaron en la validación.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Qué cambia</h3>
+        <p>Se puede mandar un enlace a «las noches más cálidas de 2024 en tal estación» y quien lo abra ve exactamente eso. La ficha de estación carga un mapa menos. La gráfica de /datos se puede usar sin ratón.</p>
+      </section>
+      <details class="archivos">
+        <summary>Archivos afectados</summary>
+        <ul>
+          <li><code>src/routes/+page.svelte</code></li>
+          <li><code>src/lib/components/map/StationsLayer.svelte</code></li>
+          <li><code>src/lib/components/map/RecientesPanel.svelte</code></li>
+          <li><code>src/lib/components/map/Map.svelte</code></li>
+          <li><code>src/lib/components/map/MapControls.svelte</code></li>
+          <li><code>src/lib/components/station/StationMinimap.svelte</code></li>
+          <li><code>src/lib/components/datos/RecordsChart.svelte</code></li>
+          <li><code>src/lib/geo/siluetas.js</code></li>
+          <li><code>src/lib/og/card.js</code></li>
+        </ul>
+      </details>
+    </article>
+    <article class="entrada">
+      <div class="entrada-cabecera">
         <span class="etiqueta etiqueta-rendimiento">Rendimiento</span>
         <time>2026-09-25</time>
       </div>
