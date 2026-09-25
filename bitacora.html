@@ -172,6 +172,53 @@
     <!-- NUEVA_ENTRADA_AQUI -->
     <article class="entrada">
       <div class="entrada-cabecera">
+        <span class="etiqueta etiqueta-rendimiento">Rendimiento</span>
+        <time>2026-09-25</time>
+      </div>
+      <h2>La web reutiliza los datos ya descargados y los pide antes de necesitarlos</h2>
+      <p class="resumen">Moverse entre el mapa, las fichas y /datos es más rápido porque los datos no se descargan dos veces y empiezan a llegar en cuanto apuntas a un enlace.</p>
+      <section>
+        <h3>Qué se hizo</h3>
+        <p>La web guarda en memoria, durante 30 minutos, cada fichero de datos que descarga. Antes, ir del mapa a una estación y volver descargaba otra vez el catálogo completo; ahora se reutiliza.</p>
+        <p>Además, las fichas de estación y el mapa empiezan a pedir sus datos en cuanto pasas el ratón por un enlace que lleva a ellos, y el listado de récords recientes hace lo mismo con cada fila. Cuando haces clic, normalmente los datos ya están.</p>
+        <p>En el mapa, el fondo cartográfico empieza a cargarse a la vez que las estaciones, en vez de esperar a que lleguen. La fecha de &quot;datos actualizados&quot; se pide después, para no quitarle velocidad a lo importante.</p>
+        <p>Por dentro, el mapa calcula una sola vez por estación su último récord (antes lo repetía cuatro veces), los datos grandes ya no se envuelven en el sistema de seguimiento de cambios de Svelte, que aquí no hacía falta, y dos reinicios (el del año al cambiar de máxima a mínima y el de la paginación del listado) ocurren en el mismo instante que el cambio, sin un parpadeo intermedio.</p>
+        <p>En el servidor, la ficha de cada estación tiene un tiempo máximo de espera a HuggingFace (2,5 s) y el CDN de Vercel guarda su HTML una hora.</p>
+      </section>
+      <section>
+        <h3>Por qué se hizo así</h3>
+        <p>La mayor parte del tiempo de espera en esta web es de red, no de cálculo. Por eso lo que más se nota es no repetir descargas y adelantarlas. Una caché en memoria de 30 minutos es lo más sencillo que resuelve la navegación dentro de la web sin arriesgarse a mostrar datos viejos: el pipeline publica varias veces al día y, si recargas la página, siempre se descarga todo de nuevo.</p>
+      </section>
+      <section>
+        <h3>Otras opciones que se descartaron</h3>
+        <ul class="alternativas">
+          <li><span class="opcion">Depender de la caché del navegador:</span> Los ficheros se sirven desde HuggingFace y sus cabeceras de caché no las controlamos: en la práctica se volvían a pedir.</li>
+          <li><span class="opcion">Guardar los datos en el almacenamiento local del navegador entre visitas:</span> Complica saber cuándo están desactualizados y el catálogo es grande; la ganancia no compensa.</li>
+          <li><span class="opcion">Cargar los datos en el servidor y mandar la página ya montada:</span> Cambiaría toda la arquitectura de la web (ahora funciona en el navegador) para una mejora que se consigue con mucho menos.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Qué cambia</h3>
+        <p>Volver al mapa desde una ficha es instantáneo, abrir una estación desde el listado o desde /datos suele serlo, y la primera carga del mapa es más corta porque el fondo y las estaciones llegan a la vez.</p>
+      </section>
+      <details class="archivos">
+        <summary>Archivos afectados</summary>
+        <ul>
+          <li><code>src/lib/data/data.js</code></li>
+          <li><code>src/routes/+page.js</code></li>
+          <li><code>src/routes/+page.svelte</code></li>
+          <li><code>src/routes/estacion/[indicativo]/+page.js</code></li>
+          <li><code>src/routes/datos/+page.svelte</code></li>
+          <li><code>src/lib/components/map/RecientesPanel.svelte</code></li>
+          <li><code>src/lib/components/map/StationsLayer.svelte</code></li>
+          <li><code>src/lib/components/datos/RecordsChart.svelte</code></li>
+          <li><code>src/hooks.server.js</code></li>
+          <li><code>src/app.html</code></li>
+        </ul>
+      </details>
+    </article>
+    <article class="entrada">
+      <div class="entrada-cabecera">
         <span class="etiqueta etiqueta-refactor">Refactor</span>
         <time>2026-09-24</time>
       </div>
