@@ -287,21 +287,14 @@ Props:
 						>
 							<rect {x} y={MARGIN.top} width={geom.barW} height={geom.h} fill="transparent" />
 							<rect
+								class="bar"
 								{x}
 								y={geom.cy - hMax}
 								width={geom.barW}
 								height={hMax}
 								fill={COLOR_MAX}
-								opacity={hoverIdx === i ? 1 : 0.85}
 							/>
-							<rect
-								{x}
-								y={geom.cy}
-								width={geom.barW}
-								height={hMin}
-								fill={COLOR_MIN}
-								opacity={hoverIdx === i ? 1 : 0.85}
-							/>
+							<rect class="bar" {x} y={geom.cy} width={geom.barW} height={hMin} fill={COLOR_MIN} />
 						</g>
 					{/each}
 					<!-- Etiquetas del eje X, en la base. La última siempre se muestra;
@@ -536,6 +529,15 @@ Props:
 	}
 	.hint {
 		margin: 0;
+	}
+	/* El realce de la barra bajo el cursor va por CSS: con un atributo que
+	   dependiera de hoverIdx, cada movimiento del ratón reevaluaba las ~200
+	   barras de la serie anual. */
+	.bar {
+		opacity: 0.85;
+	}
+	g:hover .bar {
+		opacity: 1;
 	}
 	.tick {
 		font-size: 10px;

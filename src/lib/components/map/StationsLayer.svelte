@@ -200,6 +200,11 @@ Propiedades esperadas en cada feature:
 		["interpolate", ["linear"], ["get", "daysSinceRecord"], 0, 0.7, 30, 0.5, 365, 0.25, 1825, 0],
 	];
 
+	// Último GeoJSON entregado a la fuente. MapLibre lo re-procesa entero en un
+	// worker en cada setData, así que se evita repetirlo con los mismos datos
+	// (p. ej. justo al montar, cuando add() acaba de crear la fuente con ellos).
+	let sentData = null;
+
 	function removeLayers(map) {
 		for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
 		if (map.getSource(SRC)) map.removeSource(SRC);
@@ -212,6 +217,7 @@ Propiedades esperadas en cada feature:
 		if (!map) return;
 		removeLayers(map);
 
+		sentData = data;
 		map.addSource(SRC, { type: "geojson", data });
 
 		map.addLayer({
@@ -334,6 +340,8 @@ Propiedades esperadas en cada feature:
 	for (const [type, fn] of Object.entries(handlers)) ctx.getMap().on(type, CIRCLE, fn);
 
 	$effect(() => {
+		if (data === sentData) return;
+		sentData = data;
 		ctx.getMap()?.getSource(SRC)?.setData(data);
 	});
 

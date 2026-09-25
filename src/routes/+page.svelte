@@ -5,19 +5,8 @@
 	import StationPanel from "$lib/components/map/StationPanel.svelte";
 	import RecientesPanel from "$lib/components/map/RecientesPanel.svelte";
 	import Segmented from "$lib/components/ui/Segmented.svelte";
-	import {
-		fetchStations,
-		fetchStats,
-		FAMILIA_OPCIONES,
-		FAMILIA_SHORT,
-		FAMILIA_TIPOS,
-	} from "$lib/data/data.js";
-	import {
-		ultimoVigenteEnFamilia,
-		anioDeVigente,
-		aniosConVigentes,
-		vigentesEnAnio,
-	} from "$lib/data/records.js";
+	import { fetchStats, FAMILIA_OPCIONES, FAMILIA_SHORT, FAMILIA_TIPOS } from "$lib/data/data.js";
+	import { ultimoVigenteEnFamilia, vigentesEnAnio } from "$lib/data/records.js";
 	import { daysSince, relativeFromNow } from "$lib/utils/age.js";
 	import { PAGE_META } from "$lib/seo.js";
 	import { colorForDays } from "$lib/utils/colors.js";
@@ -25,7 +14,11 @@
 	import { extent } from "d3-array";
 	import { slide } from "svelte/transition";
 
-	let stations = $state([]);
+	let { data } = $props();
+
+	// $state.raw: el catálogo (cientos de estaciones) se sustituye entero y
+	// nunca se muta, así que no hace falta el proxy profundo de $state.
+	let stations = $state.raw([]);
 	/** Fecha de la última actualización del dataset (la publica el pipeline en stats.json). */
 	let ultimaActualizacion = $state(null);
 	let loading = $state(true);
@@ -52,52 +45,66 @@
 	});
 
 	$effect(() => {
-		fetchStations()
+		data.stations
 			.then((s) => (stations = s))
 			.catch((e) => (error = String(e)))
-			.finally(() => (loading = false));
-		fetchStats()
-			.then((s) => (ultimaActualizacion = s.generadoEn))
-			.catch((e) => console.warn("No se pudo cargar stats.json", e));
+			.finally(() => {
+				loading = false;
+				// stats.json solo aporta la fecha de actualización: se pide después
+				// para no competir en ancho de banda con stations.json.
+				fetchStats()
+					.then((s) => (ultimaActualizacion = s.generadoEn))
+					.catch((e) => console.warn("No se pudo cargar stats.json", e));
+			});
 	});
+
+	/** Por estación, su último récord vigente de la familia activa y el año en
+	 *  que se fijó. Se calcula una sola vez por familia y lo reutilizan el
+	 *  filtro de año, el GeoJSON y el panel de récords. */
+	const conVigente = $derived(
+		stations.map((s) => {
+			const ult = ultimoVigenteEnFamilia(s, familia);
+			return { s, ult, anio: ult ? +ult.fecha.slice(0, 4) : null };
+		}),
+	);
 
 	/** Años en los que alguna estación tiene su récord vigente de la familia
 	 *  activa, de más reciente a más antiguo. */
-	const aniosOpts = $derived(aniosConVigentes(stations, familia));
+	const aniosOpts = $derived(
+		[...new Set(conVigente.map((x) => x.anio))].filter((y) => y != null).sort((a, b) => b - a),
+	);
 
-	// Al cambiar de familia, el año elegido puede quedarse sin ninguna estación
-	// (típico en años antiguos): en ese caso se vuelve a "cualquier año" en vez
-	// de dejar el mapa vacío sin explicación.
-	$effect(() => {
-		if (anio != null && aniosOpts.length > 0 && !aniosOpts.includes(anio)) anio = null;
-	});
+	function setFamilia(v) {
+		familia = v;
+		selected = null;
+		// El año elegido puede quedarse sin ninguna estación en la otra familia
+		// (típico en años antiguos): en ese caso se vuelve a "cualquier año" en
+		// vez de dejar el mapa vacío sin explicación. Se hace aquí y no en un
+		// $effect para que el mapa no llegue a pintarse vacío un fotograma.
+		if (anio != null && !aniosOpts.includes(anio)) anio = null;
+	}
 
 	/** Estaciones que se pintan: todas, o solo aquellas cuyo récord vigente de la
 	 *  familia activa se fijó en el año seleccionado. */
-	const visibles = $derived(
-		anio == null ? stations : stations.filter((s) => anioDeVigente(s, familia) === anio),
-	);
+	const visibles = $derived(anio == null ? conVigente : conVigente.filter((x) => x.anio === anio));
 
 	const geojson = $derived.by(() => {
 		const features = visibles
-			.map((s) => {
-				const ult = ultimoVigenteEnFamilia(s, familia);
-				return {
-					type: "Feature",
-					geometry: { type: "Point", coordinates: [s.lon, s.lat] },
-					properties: {
-						indicativo: s.indicativo,
-						esMax: familia === "max",
-						esAbsoluto: !!ult?.esAbsoluto,
-						provisional: !!ult?.provisional,
-						daysSinceRecord: daysSince(ult?.fecha, now) ?? 100000,
-						// Con filtro de año, todas las estaciones mostradas son del mismo
-						// año: la escala de antigüedad deja de informar y la capa pinta
-						// todos los puntos igual.
-						uniforme: anio != null,
-					},
-				};
-			})
+			.map(({ s, ult }) => ({
+				type: "Feature",
+				geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+				properties: {
+					indicativo: s.indicativo,
+					esMax: familia === "max",
+					esAbsoluto: !!ult?.esAbsoluto,
+					provisional: !!ult?.provisional,
+					daysSinceRecord: daysSince(ult?.fecha, now) ?? 100000,
+					// Con filtro de año, todas las estaciones mostradas son del mismo
+					// año: la escala de antigüedad deja de informar y la capa pinta
+					// todos los puntos igual.
+					uniforme: anio != null,
+				},
+			}))
 			// Los más antiguos primero → los frescos quedan al final y se pintan
 			// ENCIMA (mayor z). Los círculos respetan este orden de dibujado.
 			.sort((a, b) => b.properties.daysSinceRecord - a.properties.daysSinceRecord);
@@ -130,9 +137,9 @@
 	 *  que cuenta el badge ×N de cada fila. Más recientes primero. */
 	const panelItems = $derived(
 		visibles
-			.map((s) => ({
+			.map(({ s, ult }) => ({
 				s,
-				ult: ultimoVigenteEnFamilia(s, familia),
+				ult,
 				n: anio == null ? countRecientes(s) : vigentesEnAnio(s, familia, anio),
 			}))
 			.filter((x) => x.ult && (anio != null || x.n > 0))
@@ -179,14 +186,14 @@
 		if (width === 0 || height === 0) return;
 
 		const m = safeMargin();
-		const anyVisible = visibles.some((s) => {
+		const anyVisible = visibles.some(({ s }) => {
 			const p = mapRef.project([s.lon, s.lat]);
 			return p.x >= m.left && p.x <= width - m.right && p.y >= m.top && p.y <= height - m.bottom;
 		});
 		if (anyVisible) return;
 
-		const [minLon, maxLon] = extent(visibles, (s) => s.lon);
-		const [minLat, maxLat] = extent(visibles, (s) => s.lat);
+		const [minLon, maxLon] = extent(visibles, (x) => x.s.lon);
+		const [minLat, maxLat] = extent(visibles, (x) => x.s.lat);
 		// El padding nunca puede igualar/superar el contenedor: MapLibre lanza
 		// en `fitBounds` si left+right >= width (o top+bottom >= height).
 		const maxH = Math.max(0, width / 2 - 1);
@@ -229,6 +236,23 @@
 </svelte:head>
 
 <div class="root">
+	<!-- El mapa se monta desde el principio para que MapLibre, el estilo y las
+	     teselas se descarguen en paralelo con stations.json (antes esperaban a
+	     que llegara). Mientras tanto lo tapa el overlay de carga. -->
+	<div class="map-wrap">
+		<Map
+			longitude={viewPeninsula.center[0]}
+			latitude={viewPeninsula.center[1]}
+			zoom={viewPeninsula.zoom}
+			onReady={(m) => (mapRef = m)}
+		>
+			{#if stations.length > 0}
+				<StationsLayer data={geojson} onClick={focusStation} />
+			{/if}
+			<MapControls initialView={viewPeninsula} altView={viewCanarias} />
+		</Map>
+	</div>
+
 	{#if loading}
 		<div class="overlay">
 			<div class="spinner" aria-hidden="true"></div>
@@ -238,18 +262,6 @@
 		<div class="overlay error">
 			<p>No se pudieron cargar las estaciones.</p>
 			<p class="detail">{error}</p>
-		</div>
-	{:else}
-		<div class="map-wrap">
-			<Map
-				longitude={viewPeninsula.center[0]}
-				latitude={viewPeninsula.center[1]}
-				zoom={viewPeninsula.zoom}
-				onReady={(m) => (mapRef = m)}
-			>
-				<StationsLayer data={geojson} onClick={focusStation} />
-				<MapControls initialView={viewPeninsula} altView={viewCanarias} />
-			</Map>
 		</div>
 	{/if}
 
@@ -284,13 +296,7 @@
 		</div>
 		<Segmented
 			options={FAMILIA_OPCIONES}
-			bind:value={
-				() => familia,
-				(v) => {
-					familia = v;
-					selected = null;
-				}
-			}
+			bind:value={() => familia, setFamilia}
 			label="Familia de récord"
 			full
 		/>
@@ -433,6 +439,9 @@
 	.map-wrap {
 		position: absolute;
 		inset: 0;
+		/* Contexto de apilado propio: la botonera del mapa (z-index 5) queda
+		   dentro y el overlay de carga la tapa mientras llegan los datos. */
+		isolation: isolate;
 	}
 	/* Mobile-first: la HUD se sitúa arriba, compacta, pegada al borde. */
 	.hud {

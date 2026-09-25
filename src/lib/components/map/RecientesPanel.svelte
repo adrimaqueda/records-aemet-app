@@ -19,20 +19,22 @@ Props:
 	import { slide } from "svelte/transition";
 	import { isMobile } from "$lib/utils/viewport.svelte.js";
 	import { fmtDayMonth, fmtTemp } from "$lib/utils/format.js";
+	import { prefetchStationDetail } from "$lib/data/data.js";
 	import ProvisionalTag from "$lib/components/ui/ProvisionalTag.svelte";
 
 	let { items, titulo, onSelect, selected, badgeLabel } = $props();
 
 	const PAGE_SIZE = 10;
-	let offset = $state(0);
+	// Al cambiar el listado (p. ej., al cambiar de familia) vuelve al inicio.
+	// Es un $derived escribible (los botones lo cambian): se reinicia en el
+	// mismo render que el listado nuevo, sin pasar un fotograma con una página
+	// que ya no existe, como ocurría al resetearlo desde un $effect.
+	let offset = $derived.by(() => {
+		items; // dependencia: un listado nuevo reinicia la paginación
+		return 0;
+	});
 	// En móvil arrancamos colapsado; en desktop, expandido.
 	let visible = $state(!isMobile.current);
-
-	// Al cambiar el listado (p. ej., al cambiar de familia), vuelve al inicio.
-	$effect(() => {
-		items;
-		offset = 0;
-	});
 
 	// En móvil, al abrir el panel de una estación se colapsa el listado.
 	$effect(() => {
@@ -62,7 +64,14 @@ Props:
 				<ol>
 					{#each items.slice(offset, offset + PAGE_SIZE) as { s, ult, n } (s.indicativo)}
 						<li>
-							<button class="link" onclick={() => onSelect(s)}>
+							<!-- Precarga el detalle al apuntar a la fila: el panel abre sin
+							     esperar a la red. -->
+							<button
+								class="link"
+								onclick={() => onSelect(s)}
+								onpointerenter={() => prefetchStationDetail(s.indicativo)}
+								onfocus={() => prefetchStationDetail(s.indicativo)}
+							>
 								<span class="rec-name">
 									{s.nombre}
 									{#if n > 1}

@@ -73,13 +73,6 @@ export function vigentesEnAnio(s, fam, anio) {
 	}).length;
 }
 
-/** Años (descendente) en los que alguna estación tiene su récord vigente de la familia. */
-export function aniosConVigentes(stations, fam) {
-	const set = new Set(stations.map((s) => anioDeVigente(s, fam)));
-	set.delete(null);
-	return [...set].sort((a, b) => b - a);
-}
-
 /**
  * Filas para la gráfica de /datos: por año, cuántas estaciones tienen ahí su
  * récord vigente más reciente de máxima y de mínima. Rellena todos los años del
